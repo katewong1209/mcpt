@@ -134,7 +134,11 @@ def walkforward_donch(
             best_lookback, _ = optimize_donchian(
                 ohlc.iloc[i - train_lookback : i], lb_min, lb_max, lb_step
             )
-            tmp_signal = donchian_breakout(ohlc, best_lookback)
+            tmp_signal = (
+                donchian_breakout(ohlc, best_lookback)
+                if best_lookback > 1
+                else pd.Series(np.full(n, np.nan), index=ohlc.index)
+            )
             next_train += train_step
         wf_signal[i] = tmp_signal.iloc[i]
     return wf_signal
