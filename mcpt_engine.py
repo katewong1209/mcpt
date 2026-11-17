@@ -2,7 +2,8 @@
 
 p-value convention (faithful to the reference scripts): the real run counts as
 one observation. better starts at 1; N-1 permutations are generated;
-    p = better / (completed + 1)   →   better / N when the full run completes.
+    p = better / (completed + 1)   ->   better / N when the full run completes.
+Seeds are fixed internally (cfg['seed']) and are not user-editable.
 """
 import time
 import traceback
@@ -107,16 +108,16 @@ def run_mcpt(job, btc, cfg):
                 raise ValueError(
                     "Walk-forward window must exceed the training window — widen years or shrink training."
                 )
-            job["window_desc"] = (
-                f"{cfg['wf_start']}–{cfg['wf_end']} · OOS from bar {tw:,}"
-            )
+            job["window_desc"] = f"{cfg['wf_start']}–{cfg['wf_end']} · OOS from bar {tw:,}"
             job["wf_train"] = tw
             c = work_df["close"].to_numpy()
             if turbo:
                 sig, choices = walkforward_donch_fast(
                     c, tw, tstep, *lb, return_choices=True
                 )
-                job["wf_choices"] = choices
+                job["wf_choices"] = [
+                    (work_df.index[min(t, len(work_df) - 1)], int(b)) for t, b in choices
+                ]
             else:
                 sig = walkforward_donch(work_df, tw, tstep, *lb)
             real_rets = sig * _rets(c)
@@ -130,9 +131,7 @@ def run_mcpt(job, btc, cfg):
             sig_s, real_pf = ma_crossover(
                 work_df, cfg["ma_fast"], cfg["ma_slow"], cfg["ma_short"]
             )
-            real_rets = (
-                sig_s * np.log(work_df["close"]).diff().shift(-1)
-            ).to_numpy()
+            real_rets = (sig_s * np.log(work_df["close"]).diff().shift(-1)).to_numpy()
             step = _downsample(len(work_df))
             job["curve_x"] = work_df.index[::step]
 
@@ -177,7 +176,9 @@ def run_mcpt(job, btc, cfg):
                         if pL > 0
                         else np.full(len(perm), np.nan)
                     )
-                    job["sample_curves"].append(_equity(psig * _rets(perm["close"]))[::step])
+                    job["sample_curves"].append(
+                        _equity(psig * _rets(perm["close"]))[::step]
+                    )
 
             elif strat == "tree":
                 perm = get_permutation(work_df, seed=seed)
