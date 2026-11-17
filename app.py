@@ -51,6 +51,8 @@ APP_NAME = "Permutation Tests Trading Strategies"
 AUTHOR = "Kate Wong"
 BASE_SEED = 69          # fixed, not user-editable
 ANATOMY_SEED = 4242     # fixed, not user-editable
+REF_SOURCE = "Reference BTC/ETH pair (seeded)"
+REF_SEED = 7            # seed behind the downloadable reference CSVs
 
 C = dict(
     ink="#05070d", panel="#0b101c", panel2="#101728",
@@ -201,7 +203,10 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 .panel{background:linear-gradient(150deg,#0d1424,#0a0f1a);border:1px solid var(--line);
   border-radius:16px;padding:1.05rem 1.2rem;margin:.5rem 0;}
 .panel h3{margin:.1rem 0 .45rem;font-size:1.1rem;color:var(--text);}
+.panel h4{margin:.7rem 0 .3rem;font-size:.95rem;color:var(--btc2);}
 .panel p{color:var(--muted);font-size:.87rem;line-height:1.65;margin:.2rem 0;}
+.panel ul,.panel ol{color:var(--muted);font-size:.85rem;line-height:1.7;margin:.25rem 0 .2rem;padding-left:1.15rem;}
+.panel li b{color:var(--text);font-weight:600;}
 .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:.75rem;margin-top:.7rem;}
 .step{border:1px solid rgba(139,148,171,.18);border-radius:12px;padding:.75rem .85rem;background:rgba(11,16,28,.6);}
 .step .n{font-family:'IBM Plex Mono',monospace;font-size:1.25rem;font-weight:600;
@@ -219,6 +224,8 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 .callout{border-left:3px solid var(--btc);background:rgba(247,147,26,.07);
   border-radius:0 12px 12px 0;padding:.75rem .95rem;color:var(--muted);font-size:.85rem;margin:.75rem 0;line-height:1.6;}
 .callout b{color:var(--btc2);}
+.callout.cool{border-left-color:var(--cyan);background:rgba(34,211,238,.06);}
+.callout.cool b{color:var(--cyan);}
 .strat-block{border:1px solid var(--line);border-radius:16px;padding:1rem 1.15rem;margin:.7rem 0;
   background:linear-gradient(155deg,#0d1424,#0a0f1a);}
 .strat-block .hd{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin-bottom:.45rem;}
@@ -227,6 +234,15 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 .strat-block ol{margin:.25rem 0 .7rem;padding-left:1.15rem;color:var(--muted);font-size:.84rem;line-height:1.65;}
 .strat-block ol b{color:var(--text);font-weight:600;}
 .strat-block .ask{font-size:.8rem;color:var(--btc2);border-top:1px dashed rgba(247,147,26,.25);padding-top:.55rem;margin-top:.6rem;}
+.note-sec{border:1px solid var(--line);border-radius:16px;padding:1rem 1.15rem;margin:.7rem 0;
+  background:linear-gradient(155deg,#0d1424,#0a0f1a);}
+.note-sec h4{margin:.1rem 0 .5rem;font-size:1rem;color:var(--text);}
+.note-sec p{color:var(--muted);font-size:.86rem;line-height:1.7;margin:.35rem 0;}
+.note-sec p b{color:var(--btc2);font-weight:600;}
+.note-sec .fig{font-family:'IBM Plex Mono',monospace;color:var(--text);}
+.note-sec ul{margin:.3rem 0;padding-left:1.15rem;color:var(--muted);font-size:.84rem;line-height:1.65;}
+.note-sec li b{color:var(--text);}
+.kv{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:var(--muted);letter-spacing:.04em;}
 
 button[data-baseweb="tab"]{font-family:'IBM Plex Mono',monospace;font-size:.76rem;letter-spacing:.05em;color:var(--muted);}
 button[data-baseweb="tab"][aria-selected="true"]{color:var(--btc2);}
@@ -319,6 +335,13 @@ def num_slider(label, lo, hi, default, key):
     return int(st.slider(label, lo, hi, int(min(max(int(default), lo), hi)), key=key))
 
 
+def fmt_n(x, spec="{:.3f}", dash="—"):
+    try:
+        return spec.format(x) if np.isfinite(x) else dash
+    except Exception:
+        return dash
+
+
 def hist_fig(perm_pfs, real_pf, p, live=False):
     vals = np.asarray([v for v in perm_pfs if np.isfinite(v)], dtype=float)
     fig = base_fig(360, "PF · real vs noise" + (" · live" if live else ""))
@@ -385,17 +408,17 @@ def equity_fig(x, real_eq, samples, title="Equity"):
     return fig
 
 
-def rebased_fig(x, lcr, lcp, title="Real vs permuted · log price"):
+def rebased_fig(x, lcr, lcp, title="Real vs permuted · log price", names=("Real", "Permuted")):
     fig = base_fig(360, title)
     x = np.asarray(x); yr = finite_only(lcr); yp = finite_only(lcp)
     n = min(len(x), len(yr), len(yp)); x, yr, yp = x[:n], yr[:n], yp[:n]
-    fig.add_trace(go.Scatter(x=x, y=yr, mode="lines", name="Real",
+    fig.add_trace(go.Scatter(x=x, y=yr, mode="lines", name=names[0],
                              line=dict(color=C["btc"], width=2.6),
-                             hovertemplate="%{y:+.3f}<extra>real</extra>"))
-    fig.add_trace(go.Scatter(x=x, y=yp, mode="lines", name="Permuted",
+                             hovertemplate="%{y:+.3f}<extra>" + names[0] + "</extra>"))
+    fig.add_trace(go.Scatter(x=x, y=yp, mode="lines", name=names[1],
                              line=dict(color=C["cyan"], width=1.7),
                              fill="tonexty", fillcolor="rgba(139,123,255,.14)",
-                             hovertemplate="%{y:+.3f}<extra>permuted</extra>"))
+                             hovertemplate="%{y:+.3f}<extra>" + names[1] + "</extra>"))
     fig.add_trace(go.Scatter(x=x, y=yr, mode="lines", line=dict(color=C["btc"], width=2.6),
                              showlegend=False, hoverinfo="skip"))
     fig.add_hline(y=0, line_color="rgba(139,148,171,.45)", line_width=1)
@@ -608,7 +631,7 @@ def sanitize_range(key, lo, hi):
 
 # ---------------------------------------------------------------- data
 @st.cache_data(show_spinner="Synthesizing demo feed…")
-def synth_pair(seed=7):
+def synth_pair(seed=REF_SEED):
     return make_synthetic_pair(seed)
 
 
@@ -616,7 +639,8 @@ def synth_pair(seed=7):
 def parse_bytes(name, data):
     bio = io.BytesIO(data)
     if name.lower().endswith(".csv"):
-        df = pd.read_csv(bio)
+        # round_trip keeps float64 exact, so an exported reference CSV reloads identically
+        df = pd.read_csv(bio, float_precision="round_trip")
         c0 = df.columns[0]
         df[c0] = pd.to_datetime(df[c0])
         df = df.set_index(c0)
@@ -646,6 +670,43 @@ def to_tf(df, tf):
     return resample_ohlc(df, tf)
 
 
+@st.cache_data(show_spinner="Preparing reference CSV…")
+def reference_csv(symbol):
+    """The seeded reference feed as a CSV byte string — identical to the default run."""
+    b, e = synth_pair()
+    df = (b if symbol == "BTC" else e).copy()
+    df.index.name = "timestamp"
+    return df.to_csv().encode("utf-8")
+
+
+@st.cache_data(show_spinner="Packaging reference pair…")
+def reference_zip():
+    readme = (
+        "Permutation Tests · Trading Strategies — reference pair\r\n"
+        "=======================================================\r\n"
+        f"Provenance : seeded synthetic feed, make_synthetic_pair(seed={REF_SEED}).\r\n"
+        "             GARCH(1,1) volatility, t(4) innovations, AR(1) trend regimes,\r\n"
+        "             rare jumps, correlated cross-market shocks, realistic wicks.\r\n"
+        "             THIS IS NOT EXCHANGE HISTORY. Do not cite it as BTC/ETH prices.\r\n"
+        "Coverage   : 2016-01-01 00:00 to 2020-12-31 23:00, hourly, 43,848 bars each.\r\n"
+        "Schema     : timestamp,open,high,low,close (UTC-naive, ascending, no duplicates).\r\n"
+        "Usage      : sidebar > Source > Upload files > Currency 1 = BTC, Currency 2 = ETH.\r\n"
+        "             Results reproduce the app's default seeded run exactly.\r\n"
+        "Real data  : see Method & Guide > Data for public sources and the required schema.\r\n"
+        f"Built by   : {AUTHOR}\r\n"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("BTCUSD_reference_hourly.csv", reference_csv("BTC"))
+        z.writestr("ETHUSD_reference_hourly.csv", reference_csv("ETH"))
+        z.writestr("README.txt", readme)
+    return buf.getvalue()
+
+
+def use_reference_pair():
+    st.session_state["w_source"] = REF_SOURCE
+
+
 def resolve_data(source, up1, up2):
     """Returns (currency1, currency2 or None, label, notice) at native resolution."""
     if source == "Upload files":
@@ -662,7 +723,7 @@ def resolve_data(source, up1, up2):
         c2 = load_path(str(pe), pe.stat().st_mtime) if pe.exists() else None
         return c1, c2, p.name + (" + ETH" if c2 is not None else ""), None
     b, e = synth_pair()
-    return b, e, "DEMO FEED", None
+    return b, e, "REFERENCE PAIR", None
 
 
 # ---------------------------------------------------------------- config & callbacks
@@ -952,6 +1013,133 @@ def anatomy(btc, eth, draw, nlags, tf):
     return out
 
 
+# ---------------------------------------------------------------- market notes
+@st.cache_data(show_spinner="Reading the tape…")
+def notes_stats(btc, eth, tf):
+    """Descriptive diagnostics behind the Market Notes article — all computed, none assumed."""
+    ppy = bars_per_year(tf)
+
+    def one(df):
+        c = df["close"].to_numpy(dtype=float)
+        lc = np.log(c)
+        r = np.diff(lc)
+        n = len(r)
+        if n < 8:
+            return None
+        s = pd.Series(r)
+        a = pd.Series(np.abs(r))
+        eq = np.cumsum(r)
+        dd = eq - np.maximum.accumulate(eq)
+        k = max(1, n // 100)
+        q = int(max(2, min(24, n // 4)))
+        rq = pd.Series(lc).diff(q).dropna()
+        v1 = float(s.var(ddof=1))
+        vr = float(rq.var(ddof=1) / (q * v1)) if n > 3 * q and v1 > 0 else float("nan")
+        sd = float(s.std(ddof=1))
+        z = (r - float(s.mean())) / sd if sd > 0 else r * 0.0
+        lag = int(min(24, max(2, n // 10)))
+        return dict(
+            bars=int(len(df)), start=df.index[0], end=df.index[-1],
+            first=float(c[0]), last=float(c[-1]), years=float(len(df) / ppy),
+            total=float(lc[-1] - lc[0]), ann_vol=sd * np.sqrt(ppy),
+            skew=float(s.skew()), kurt=float(s.kurt()),
+            best=float(r.max()), worst=float(r.min()),
+            mdd_log=float(dd.min()), mdd_pct=float(np.expm1(dd.min())),
+            acf1=float(s.autocorr(1)), acf1_abs=float(a.autocorr(1)),
+            acfL_abs=float(a.autocorr(lag)), lag=lag,
+            p3=float((np.abs(z) > 3).mean()), p2=float((np.abs(z) > 2).mean()),
+            top1=float(np.sort(np.abs(r))[-k:].sum() / max(np.abs(r).sum(), 1e-12)),
+            vrq=q, vr=vr,
+        )
+
+    out = dict(tf=tf, btc=one(btc), eth=one(eth) if eth is not None else None,
+               joint=None, perm=None, acf=None, dd=None)
+
+    if out["btc"] is not None:
+        sl = btc.iloc[-min(len(btc), int(tf_defaults(tf)["anat"])):]
+        pm = get_permutation(sl, seed=ANATOMY_SEED)
+        rr = np.log(sl["close"]).diff().dropna().to_numpy()
+        pr = np.log(pm["close"]).diff().dropna().to_numpy()
+        nlags = int(max(2, min(48, len(rr) // 3)))
+        aar, n = acf(np.abs(rr), nlags)
+        aap, _ = acf(np.abs(pr), nlags)
+        out["acf"] = dict(lags=np.arange(nlags + 1), real=aar, perm=aap, n=n)
+        out["perm"] = dict(acf1=float(pd.Series(pr).autocorr(1)),
+                           acf1_abs=float(pd.Series(np.abs(pr)).autocorr(1)))
+        eq = np.cumsum(np.diff(np.log(btc["close"].to_numpy(dtype=float))))
+        dd = eq - np.maximum.accumulate(eq)
+        step = max(1, len(dd) // 2000)
+        out["dd"] = dict(x=btc.index[1:][::step], y=dd[::step])
+
+    if eth is not None:
+        common = btc.index.intersection(eth.index)
+        if len(common) > 30:
+            rb = np.log(btc.loc[common, "close"]).diff()
+            re = np.log(eth.loc[common, "close"]).diff()
+            j = pd.concat([rb.rename("b"), re.rename("e")], axis=1).dropna()
+            if len(j) > 30 and float(j["b"].var()) > 0:
+                w = int(max(20, min(720, len(j) // 10)))
+                roll = j["b"].rolling(w).corr(j["e"]).dropna()
+                out["joint"] = dict(
+                    n=int(len(j)), rho=float(j["b"].corr(j["e"])),
+                    beta=float(j["b"].cov(j["e"]) / j["b"].var()),
+                    rho_abs=float(j["b"].abs().corr(j["e"].abs())),
+                    win=w, roll_lo=float(roll.min()) if len(roll) else float("nan"),
+                    roll_hi=float(roll.max()) if len(roll) else float("nan"),
+                )
+    return out
+
+
+def notes_table(S):
+    rows = ["Bars", "Span (years)", "First close", "Last close", "Σ log return",
+            "Annualised vol", "Skew", "Excess kurtosis", "Best bar", "Worst bar",
+            "Max drawdown", "ACF(1) returns", "ACF(1) |returns|", "|r| > 3σ share",
+            "Top 1% of bars · share of movement"]
+    specs = ["{:,.0f}", "{:.2f}", "{:,.2f}", "{:,.2f}", "{:+.3f}", "{:.1%}", "{:+.3f}",
+             "{:.2f}", "{:+.2%}", "{:+.2%}", "{:.1%}", "{:+.4f}", "{:+.4f}", "{:.2%}", "{:.1%}"]
+    keys = ["bars", "years", "first", "last", "total", "ann_vol", "skew", "kurt", "best",
+            "worst", "mdd_pct", "acf1", "acf1_abs", "p3", "top1"]
+    data = {}
+    for label, sym in (("BTC", "btc"), ("ETH", "eth")):
+        s = S.get(sym)
+        data[label] = [fmt_n(s[k], sp) if s else "—" for k, sp in zip(keys, specs)]
+    return pd.DataFrame(data, index=rows)
+
+
+def notes_markdown(S, tf, provenance):
+    b, e, j, pm = S["btc"], S["eth"], S["joint"], S["perm"]
+    L = [f"# Market notes — {TF_LABEL[tf]} bars", "",
+         f"Provenance: {provenance}", "",
+         "Every figure below is computed from the loaded feed; nothing is assumed.", ""]
+    if b:
+        L += ["## Currency 1 (BTC)",
+              f"- Bars: {b['bars']:,} · {b['start']:%Y-%m-%d} → {b['end']:%Y-%m-%d}",
+              f"- Σ log return {b['total']:+.4f} · annualised vol {b['ann_vol']:.1%}",
+              f"- Skew {b['skew']:+.3f} · excess kurtosis {b['kurt']:.2f}",
+              f"- Bars beyond 3σ: {b['p3']:.2%} (Gaussian expectation 0.27%)",
+              f"- ACF(1) returns {b['acf1']:+.4f} · ACF(1) |returns| {b['acf1_abs']:+.4f}",
+              f"- Max drawdown {b['mdd_pct']:.1%} · top 1% of bars carry {b['top1']:.1%} of movement",
+              f"- Variance ratio q={b['vrq']}: {fmt_n(b['vr'], '{:.3f}')}", ""]
+    if e:
+        L += ["## Currency 2 (ETH)",
+              f"- Bars: {e['bars']:,} · Σ log return {e['total']:+.4f} · vol {e['ann_vol']:.1%}",
+              f"- Excess kurtosis {e['kurt']:.2f} · max drawdown {e['mdd_pct']:.1%}", ""]
+    if j:
+        L += ["## Co-movement",
+              f"- ρ(BTC, ETH) = {j['rho']:.3f} on {j['n']:,} aligned bars",
+              f"- β(ETH on BTC) = {j['beta']:.3f} · ρ of |returns| = {j['rho_abs']:.3f}",
+              f"- Rolling {j['win']}-bar ρ range: {fmt_n(j['roll_lo'],'{:.3f}')} … {fmt_n(j['roll_hi'],'{:.3f}')}", ""]
+    if pm:
+        L += ["## After one permutation",
+              f"- ACF(1) returns {pm['acf1']:+.4f} · ACF(1) |returns| {pm['acf1_abs']:+.4f}",
+              "- The marginal distribution is unchanged; serial dependence is not.", ""]
+    L += ["## Caveats",
+          "- Gross of fees, slippage and funding. Descriptive statistics, not a backtest.",
+          "- Not investment advice. Verify provenance before quoting any figure.",
+          f"\nBuilt by {AUTHOR} · Permutation Tests · Trading Strategies"]
+    return "\n".join(L)
+
+
 # ---------------------------------------------------------------- results
 def result_body(job, live=False):
     cfg = job["config"]
@@ -1067,7 +1255,7 @@ def onboarding():
     <div class="step"><div class="n">02</div><div class="h">Determine amount of variations</div><div class="b">Intrabar shape and gaps permuted separately. Mean/std/skew/kurt survive; volatility clustering and long memory die.</div></div>
     <div class="step"><div class="n">03</div><div class="h">Compare &amp; verdict</div><div class="b">p = (1 + #noise-PF ≥ real-PF) / (N + 1). If noise matches your edge, the edge is a mirage. Watch the histogram build live.</div></div>
   </div>
-  <div class="callout" style="margin-top:.85rem"><b>→ Load Currency 1, choose a bar size and a pipeline, press RUN PERMUTATION TEST.</b> Results stream as they compute; stop anytime. Mechanics, strengths and weaknesses are in Method &amp; Guide.</div>
+  <div class="callout" style="margin-top:.85rem"><b>→ Load Currency 1, choose a bar size and a pipeline, press RUN PERMUTATION TEST.</b> Results stream as they compute; stop anytime. Mechanics, strengths and weaknesses are in Method &amp; Guide; a downloadable reference pair is in Method &amp; Guide → Data.</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1143,16 +1331,19 @@ with st.sidebar:
     src_options = ["Upload files"]
     if Path("BTCUSD3600.pq").exists():
         src_options.append("Local BTCUSD3600.pq")
-    src_options.append("Synthetic demo feed")
+    src_options.append(REF_SOURCE)
     source = st.selectbox("Source", src_options, index=0, key="w_source")
 
     up1 = up2 = None
     if source == "Upload files":
         up1 = st.file_uploader("Currency 1 (.pq / .parquet / .csv)",
-                               type=["pq", "parquet", "csv"], key="up_1")
+                               type=["pq", "parquet", "csv"], key="up_1",
+                               help="timestamp + open/high/low/close · max 200 MB per file")
         with st.expander("Optional · second currency"):
             up2 = st.file_uploader("Currency 2 (optional, for correlation)",
-                                   type=["pq", "parquet", "csv"], key="up_2")
+                                   type=["pq", "parquet", "csv"], key="up_2",
+                                   help="Same schema and timestamps as Currency 1 · max 200 MB per file")
+        st.caption("No file? Download the reference pair in Method & Guide → Data.")
 
     notice = None
     try:
@@ -1266,7 +1457,7 @@ st.markdown(
   <div><span class="pulse"></span><span class="tape">MONTE CARLO PERMUTATION TESTING · {TF_LABEL[tf_now].upper()} BARS</span></div>
   <h1>Permutation Tests<span class="grad">Trading Strategies</span></h1>
   <div class="sub">Optimization always induces <b>data-mining bias</b>. This terminal re-runs your fully-optimized pipeline on
-  <b> your chosen variations </b> — same distribution, zero memory — at the bar size you choose, and measures how often noise alone beats you.</div>
+  <b>{cfg_now['n_perms']:,} shuffled universes of your choosing</b> — same distribution, zero memory — at the bar size you choose, and measures how often noise alone beats you.</div>
   <div class="chips">
     <span class="chip hot">FEED <b>{src_label}</b></span>
     <span class="chip cool">BARS <b>{TF_LABEL[tf_now]} · {len(btc_df):,}</b></span>
@@ -1277,8 +1468,8 @@ st.markdown(
 </div>
 """, unsafe_allow_html=True)
 
-tab_lab, tab_strat, tab_anat, tab_method = st.tabs(
-    ["PERMUTATION LAB", "STRATEGY", "PERMUTATION ANATOMY", "METHOD & GUIDE"]
+tab_lab, tab_strat, tab_anat, tab_notes, tab_method = st.tabs(
+    ["PERMUTATION LAB", "STRATEGY", "PERMUTATION ANATOMY", "MARKET NOTES", "METHOD & GUIDE"]
 )
 
 # ---------------------------------------------------------------- LAB
@@ -1396,6 +1587,152 @@ with tab_anat:
     else:
         st.info("Load Currency 2 to see the joint-permutation correlation demo.")
 
+# ---------------------------------------------------------------- MARKET NOTES
+with tab_notes:
+    sec("N", "Market notes — an empirical read of the loaded feed")
+    is_ref = src_label in ("REFERENCE PAIR", "DEMO FEED")
+    provenance = (
+        f"Seeded synthetic reference pair (seed {REF_SEED}), BTC- and ETH-like — not exchange history"
+        if is_ref else f"User-supplied feed: {src_label}"
+    )
+    st.markdown(
+        f'<div class="callout {"cool" if is_ref else ""}"><b>Provenance.</b> {provenance}. '
+        f'Every number in this article is computed from the feed currently loaded at the '
+        f'<b>{TF_LABEL[tf_now]}</b> bar size; change the bar size or the data and the text updates with it. '
+        'Descriptive statistics — not a backtest, not investment advice.</div>',
+        unsafe_allow_html=True)
+
+    NS = notes_stats(btc_df, eth_df, tf_now)
+    b, e, jt, pm = NS["btc"], NS["eth"], NS["joint"], NS["perm"]
+
+    if b is None:
+        st.warning("Too few bars at this timeframe for these diagnostics — pick a finer bar size or a wider feed.")
+    else:
+        st.table(notes_table(NS))
+        st.caption(f"Currency 1 · {b['start']:%Y-%m-%d} → {b['end']:%Y-%m-%d} · "
+                   f"{b['bars']:,} {unit_now} bars" + (" · Currency 2 aligned on the same timestamps." if e else ""))
+
+        cn1, cn2 = st.columns([1.4, 1])
+        with cn1:
+            if e is not None:
+                common = btc_df.index.intersection(eth_df.index)
+                lb_ = np.log(btc_df.loc[common, "close"].to_numpy()); lb_ -= lb_[0]
+                le_ = np.log(eth_df.loc[common, "close"].to_numpy()); le_ -= le_[0]
+                stp = max(1, len(common) // 2000)
+                show_fig(rebased_fig(common[::stp], lb_[::stp], le_[::stp],
+                                     "BTC vs ETH · log price", ("BTC", "ETH")), key="n_pair")
+                st.caption("Both series rebased to zero at the first shared bar.")
+            else:
+                show_fig(rebased_fig(NS["dd"]["x"], NS["dd"]["y"], NS["dd"]["y"] * 0,
+                                     "Currency 1 · drawdown path"), key="n_dd_solo")
+        with cn2:
+            if NS["acf"] is not None:
+                show_fig(acf_fig(NS["acf"]["lags"], NS["acf"]["real"], NS["acf"]["perm"],
+                                 NS["acf"]["n"], "ACF · |returns| · real vs one shuffle", unit_now),
+                         key="n_acf")
+                st.caption("The gap between amber and cyan is what the null hypothesis removes.")
+
+        gauss = 0.0027
+        ratio = b["p3"] / gauss if b["p3"] > 0 else float("nan")
+        vr_txt = (f"above 1 at q={b['vrq']} ({b['vr']:.2f}), i.e. variance grows faster than linearly with horizon — trend-like"
+                  if np.isfinite(b["vr"]) and b["vr"] > 1.05 else
+                  (f"below 1 at q={b['vrq']} ({b['vr']:.2f}), i.e. partial mean reversion at that horizon"
+                   if np.isfinite(b["vr"]) and b["vr"] < 0.95 else
+                   f"close to 1 at q={b['vrq']} ({fmt_n(b['vr'],'{:.2f}')}), i.e. near-random-walk scaling"))
+
+        st.markdown(f"""
+<div class="note-sec">
+  <h4>1 · The return distribution is decisively non-Gaussian</h4>
+  <p>Across <span class="fig">{b['bars']:,}</span> {unit_now} bars, currency 1 shows an annualised volatility of
+  <b>{b['ann_vol']:.1%}</b>, skew of <b>{b['skew']:+.3f}</b> and excess kurtosis of <b>{b['kurt']:.2f}</b>.
+  Moves beyond three standard deviations account for <b>{b['p3']:.2%}</b> of bars against a Gaussian expectation of
+  0.27% — roughly <b>{fmt_n(ratio, '{:.1f}')}×</b> the normal rate. The single best bar is
+  <b>{b['best']:+.2%}</b> and the worst <b>{b['worst']:+.2%}</b>.</p>
+  <p>The practical consequence: any risk model, position size or stop calibrated on a normal distribution
+  understates tail exposure here. It also explains why profit factor alone is a weak summary — a handful of
+  extreme bars can dominate it.</p>
+</div>
+
+<div class="note-sec">
+  <h4>2 · Direction is close to unpredictable; risk is not</h4>
+  <p>First-order autocorrelation of returns is <b>{b['acf1']:+.4f}</b>, while autocorrelation of absolute returns is
+  <b>{b['acf1_abs']:+.4f}</b> and remains <b>{fmt_n(b['acfL_abs'], '{:+.4f}')}</b> at lag {b['lag']}.
+  After a single permutation of the same bars, those two figures become <b>{fmt_n(pm['acf1'], '{:+.4f}')}</b> and
+  <b>{fmt_n(pm['acf1_abs'], '{:+.4f}')}</b> respectively.</p>
+  <p>This asymmetry is the central empirical fact behind the test. Shuffling cannot change the histogram, so a
+  strategy that only harvests the shape of the distribution keeps working on noise. A strategy that depends on
+  <i>order</i> — volatility clustering, persistence, regime length — is being judged against a world where that
+  order no longer exists.</p>
+</div>
+
+<div class="note-sec">
+  <h4>3 · Horizon changes the answer</h4>
+  <p>The variance ratio is {vr_txt}. Aggregation matters: the same feed read at a different bar size changes both
+  the tail statistics and the dependence structure, because averaging bars pulls the distribution toward normality
+  and re-mixes the clustering. This is why the terminal counts every window in bars of the selected size rather
+  than in fixed hours, and why a result should always be re-checked at one neighbouring bar size before it is trusted.</p>
+</div>
+
+<div class="note-sec">
+  <h4>4 · Path risk dominates the average</h4>
+  <p>The cumulative log return is <b>{b['total']:+.3f}</b>, yet the deepest peak-to-trough drawdown on the way is
+  <b>{b['mdd_pct']:.1%}</b>. The largest 1% of bars carry <b>{b['top1']:.1%}</b> of all absolute movement.</p>
+  <p>Two implications for evaluation. First, an equity curve that looks acceptable in summary can contain a
+  drawdown that no mandate would survive. Second, when so much movement is concentrated in so few bars, the
+  effective sample size is far smaller than the bar count suggests — another reason to demand a large permutation
+  count rather than a comfortable-looking profit factor.</p>
+</div>
+""", unsafe_allow_html=True)
+
+        if jt is not None:
+            st.markdown(f"""
+<div class="note-sec">
+  <h4>5 · Two tickers, largely one risk factor</h4>
+  <p>On <span class="fig">{jt['n']:,}</span> aligned bars, the correlation between currency 1 and currency 2 returns is
+  <b>{jt['rho']:.3f}</b>, with a beta of currency 2 on currency 1 of <b>{jt['beta']:.3f}</b>. The correlation of
+  absolute returns is <b>{jt['rho_abs']:.3f}</b>, and a rolling {jt['win']}-bar correlation ranges from
+  <b>{fmt_n(jt['roll_lo'], '{:.3f}')}</b> to <b>{fmt_n(jt['roll_hi'], '{:.3f}')}</b>.</p>
+  <p>Holding both is therefore much less diversification than two independent assets would provide, and the
+  correlation is not stable through time. Joint permutation preserves this contemporaneous relationship while
+  destroying each market's own serial structure — which is exactly the null you want when a rule reads two markets
+  at once.</p>
+</div>
+""", unsafe_allow_html=True)
+        else:
+            st.info("Load Currency 2 (the reference ETH file works) to add the co-movement section.")
+
+        st.markdown(f"""
+<div class="note-sec">
+  <h4>6 · What this implies for each pipeline</h4>
+  <ul>
+    <li><b>Donchian, in-sample.</b> With dependence this weak at lag 1 and tails this heavy, the lookback sweep has
+    ample room to fit noise. Read the amber curve against the noise envelope, never on its own.</li>
+    <li><b>Donchian, walk-forward.</b> The most defensible of the four: parameters are re-chosen on trailing bars and
+    scored only out-of-sample. Expect a lower profit factor than in-sample — that drop is the honest price of selection.</li>
+    <li><b>Decision tree.</b> With |returns| persistence at {b['acf1_abs']:+.3f} and near-zero return autocorrelation,
+    a flexible classifier can appear skilful by learning volatility state rather than direction. Cap depth, raise the
+    leaf size, and re-run.</li>
+    <li><b>MA crossover.</b> No optimizer, so a low p-value here is the cleanest evidence of a genuine trend pattern —
+    but long/flat also embeds a bet on positive drift, which the {b['total']:+.3f} cumulative log return makes explicit.</li>
+  </ul>
+</div>
+
+<div class="note-sec">
+  <h4>7 · Reproduction and caveats</h4>
+  <p>The reference pair is generated with seed {REF_SEED} and exported at full float precision, so downloading the CSVs
+  and uploading them again reproduces the default run exactly. Permutation seeds are fixed at {BASE_SEED} for tests and
+  {ANATOMY_SEED} for the anatomy draw, so every figure here is repeatable.</p>
+  <p>All figures are gross of fees, slippage and funding; drawdowns are measured in log-equity units on close-to-close
+  returns and ignore intrabar excursions. {"Because this feed is synthetic, its numbers describe the generator, not the real BTC/ETH market — load exchange history before drawing market conclusions." if is_ref else "These numbers describe the supplied file only; verify its provenance, timezone and survivorship handling before quoting them."}</p>
+</div>
+""", unsafe_allow_html=True)
+
+        nd1, nd2 = st.columns(2)
+        nd1.download_button("⬇ These notes (.md)", notes_markdown(NS, tf_now, provenance),
+                            file_name=f"market_notes_{tf_now}.md", mime="text/markdown", key="n_md")
+        nd2.download_button("⬇ Diagnostics table (.csv)", notes_table(NS).to_csv().encode(),
+                            file_name=f"market_notes_{tf_now}.csv", mime="text/csv", key="n_csv")
+
 # ---------------------------------------------------------------- METHOD & GUIDE
 with tab_method:
     sec("M", "The logic of the test")
@@ -1434,6 +1771,97 @@ minimum bar count. Permutation is applied to those same bars, so the null always
     <li><b>Frequency-domain structure</b> — the spectrum of |returns| flattens</li>
     <li><b>Anything involving dependence</b> — trends, mean-reversion, calendar effects</li>
   </ul></div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ---------------- data, reference downloads, quick start ----------------
+    sec("D", "Data — required format and a reference pair to try")
+    st.markdown(
+        """
+<div class="panel">
+<h3>File requirements</h3>
+<ul>
+  <li><b>Format.</b> <code>.csv</code>, <code>.pq</code> or <code>.parquet</code>. Upload limit is <b>max 200 MB per file</b>
+      (Streamlit's cap; raise it with <code>[server] maxUploadSize</code> in <code>.streamlit/config.toml</code> if you self-host).</li>
+  <li><b>Columns.</b> A timestamp first column, then <code>open, high, low, close</code>. Names are lower-cased; extra
+      columns (volume, symbol) are ignored. For CSV the first column is parsed as the index.</li>
+  <li><b>Timestamps.</b> Anything <code>pandas.to_datetime</code> understands. Use one timezone throughout — UTC is safest.
+      Rows are sorted and de-duplicated automatically.</li>
+  <li><b>Values.</b> Strictly positive prices; rows with missing or non-positive OHLC are dropped. A file needs at least 8 usable rows.</li>
+  <li><b>Second currency.</b> Optional, and only used for the joint-permutation correlation demo and the Market Notes
+      co-movement section. It is aligned to Currency 1 on shared timestamps.</li>
+</ul>
+<h4>Example — first three rows</h4>
+</div>
+""", unsafe_allow_html=True)
+    st.code("timestamp,open,high,low,close\n"
+            "2016-01-01 00:00:00,430.00,431.82,428.15,430.44\n"
+            "2016-01-01 01:00:00,430.44,433.10,429.90,432.02\n"
+            "2016-01-01 02:00:00,432.02,432.55,427.40,428.11", language="text")
+
+    st.markdown(
+        f"""
+<div class="callout cool"><b>Reference pair — download and try.</b> These two CSVs are the app's <b>default seeded run</b>
+exported at full precision: <b>BTC-like</b> and <b>ETH-like</b> hourly OHLC, 2016-01-01 → 2020-12-31, 43,848 bars each
+(≈4 MB per file, far below the max 200 MB cap). They are <b>synthetic</b> — GARCH(1,1) volatility, t(4) innovations,
+AR(1) trend regimes, rare jumps and correlated cross-market shocks — generated with seed {REF_SEED}.
+They are <b>not exchange history</b> and must not be quoted as BTC or ETH prices. Uploading them reproduces the
+default run exactly, which makes them ideal for learning the workflow, checking a change, or reporting a bug.</div>
+""", unsafe_allow_html=True)
+    rb1, rb2, rb3, rb4 = st.columns(4)
+    rb1.download_button("⬇ BTC reference (.csv)", reference_csv("BTC"),
+                        file_name="BTCUSD_reference_hourly.csv", mime="text/csv", key="dl_ref_btc")
+    rb2.download_button("⬇ ETH reference (.csv)", reference_csv("ETH"),
+                        file_name="ETHUSD_reference_hourly.csv", mime="text/csv", key="dl_ref_eth")
+    rb3.download_button("⬇ Both + README (.zip)", reference_zip(),
+                        file_name="reference_pair_hourly.zip", mime="application/zip", key="dl_ref_zip")
+    rb4.button("▶ Use reference pair now", on_click=use_reference_pair, key="use_ref")
+    st.caption("Currency 1 = BTC file · Currency 2 = ETH file. The button switches the sidebar source without an upload.")
+
+    st.markdown(
+        """
+<div class="panel">
+<h3>Loading real exchange history</h3>
+<p>For conclusions about the actual market, use real data. Public, no-cost sources that publish BTC and ETH OHLC:</p>
+<ul>
+  <li><b>Binance public data</b> — <code>data.binance.vision</code>, spot/futures klines aggregated into daily or monthly
+      ZIPs per symbol and interval; the companion <code>binance/binance-public-data</code> repository documents the layout.</li>
+  <li><b>CryptoDataDownload</b> — free hourly and daily CSVs for BTCUSD / ETHUSD and the USDT pairs across several venues.</li>
+  <li><b>Kaggle</b> — the long-running “Bitcoin Historical Data” minute-level dataset, and various hourly Binance mirrors.</li>
+  <li><b>Kraken OHLCVT archives</b> — free intraday history back to 2013 across pairs and intervals.</li>
+</ul>
+<p>Whatever the source, normalise it to the schema above before uploading: one row per bar, ascending UTC timestamps,
+no duplicate bars, positive prices. Binance klines carry an <code>open_time</code> in milliseconds and extra columns —
+convert and rename, then keep the four price columns.</p>
+</div>
+""", unsafe_allow_html=True)
+    st.code(
+        "import pandas as pd\n"
+        "# Binance kline CSV (no header): open_time, open, high, low, close, volume, ...\n"
+        "cols = ['open_time','open','high','low','close','volume','close_time',\n"
+        "        'qav','trades','tbbav','tbqav','ignore']\n"
+        "df = pd.read_csv('BTCUSDT-1h-2024-01.csv', header=None, names=cols)\n"
+        "df['timestamp'] = pd.to_datetime(df['open_time'], unit='ms', utc=True).dt.tz_localize(None)\n"
+        "df = df[['timestamp','open','high','low','close']].astype(\n"
+        "        {'open':float,'high':float,'low':float,'close':float})\n"
+        "df.to_csv('BTCUSD_hourly.csv', index=False)", language="python")
+
+    sec("Q", "Quick start — a first run in five minutes")
+    st.markdown(
+        """
+<div class="panel">
+<ol>
+  <li><b>Load data.</b> Sidebar → Source → <i>Reference BTC/ETH pair (seeded)</i>, or upload your own files. Currency 2 is optional.</li>
+  <li><b>Choose a bar size.</b> Start with <b>Daily</b>: enough bars for stable statistics, fast enough for 1000 permutations.
+      Hourly is the reference setting; monthly and yearly are for coarse regime questions.</li>
+  <li><b>Choose a pipeline.</b> Begin with <b>MA Crossover</b> — no optimizer, so the result is easy to interpret.
+      Then run <b>Donchian in-sample</b> to see selection bias appear, and <b>Donchian walk-forward</b> for the honest version.</li>
+  <li><b>Set permutations.</b> 200 for a smoke test, <b>1000</b> for anything you intend to report. Keep Turbo on.</li>
+  <li><b>Run and read.</b> Watch the histogram build. When it finishes, read the verdict, then the equity panel, then the
+      PF-vs-lookback surface. Download the JSON — it contains the full configuration and every permuted PF.</li>
+  <li><b>Re-check.</b> Change one thing — bar size, date range, or grid — and run again. A result that survives neighbouring
+      settings is worth more than a single flattering number.</li>
+</ol>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1542,6 +1970,19 @@ minimum bar count. Permutation is applied to those same bars, so the null always
 </div>
 """, unsafe_allow_html=True)
 
+    sec("S", "Recommended settings by bar size")
+    st.table(pd.DataFrame(
+        {
+            "Lookback grid": ["12–168", "5–60", "3–24", "2–5"],
+            "Training window": ["35,040 bars (≈4 y)", "365 bars (≈1 y)", "36 bars (3 y)", "5 bars"],
+            "Re-optimize every": ["720 bars (≈30 d)", "30 bars", "3 bars", "1 bar"],
+            "MA fast / slow": ["10 / 30", "5 / 20", "3 / 12", "2 / 3"],
+            "Tree spans / horizon": ["6·24·168 / 24", "1·5·21 / 5", "1·3·12 / 3", "1·2·3 / 1"],
+            "Typical use": ["reference setting", "default recommendation", "regime questions", "illustration only"],
+        },
+        index=["Hourly", "Daily", "Monthly", "Yearly"]))
+    st.caption("Defaults load automatically when you move the Timeframe slider; every value is clamped to the bars you actually have.")
+
     sec("G", "Reading the lab")
     st.markdown(
         """
@@ -1558,6 +1999,107 @@ The floor is 1/(N+1) — ≈0.001 at 1000 permutations.</p>
 <div class="callout"><b>Limitations.</b> Gross of fees, slippage and funding. Profit factor ignores drawdown and path risk.
 Very coarse bar sizes produce very few bars — the test still runs, but treat such results as indicative.
 MCPT prices the procedure you actually ran; if you tried several pipelines and only tested the winner, the honest N is larger.</div>
+""", unsafe_allow_html=True)
+
+    sec("T", "Troubleshooting")
+    st.table(pd.DataFrame(
+        {
+            "Likely cause": [
+                "Coarse bar size, or a long MA/lookback on a short sample",
+                "Feature spans plus label horizon exceed the rows available",
+                "Date range or bar size leaves almost nothing to trade",
+                "Missing / misnamed OHLC columns, or a non-datetime first column",
+                "Fewer than 8 usable rows after cleaning",
+                "File larger than the upload cap",
+                "Walk-forward with a wide grid on hourly bars",
+                "Two currencies with different timestamps or timezones",
+            ],
+            "What to do": [
+                "Pick a finer bar size, widen the range, lower the grid, or allow shorts",
+                "Use daily or hourly bars, or widen the date range",
+                "Widen the years; the sidebar shows the auto-fitted train / step / OOS counts",
+                "Match the schema in section D; extra columns are fine, names are lower-cased",
+                "Check for non-positive prices, NaNs and duplicate timestamps",
+                "Resample to daily before upload, or split by year (max 200 MB per file)",
+                "Keep Turbo on, raise the grid step, or reduce permutations for a first pass",
+                "Convert both to UTC and align; only shared timestamps are used",
+            ],
+        },
+        index=[
+            "“The strategy never traded on this sample”",
+            "“Only N usable rows for the tree”",
+            "“Only N bar(s) at this timeframe”",
+            "“needs columns open / high / low / close”",
+            "“needs at least 8 rows”",
+            "Upload rejected",
+            "Run feels slow",
+            "Correlation panel is empty",
+        ]))
+
+    sec("F", "Frequently asked questions")
+    st.markdown(
+        """
+<div class="panel">
+<h4>Does a low p-value prove the strategy is profitable?</h4>
+<p>No. It says the pipeline's result is unlikely to be reproduced by the same pipeline on bars with no serial
+structure. Costs, capacity, slippage, funding and regime change are all outside the test.</p>
+<h4>Does a high p-value prove there is no edge?</h4>
+<p>No. It says this procedure, on this sample, at this bar size, cannot distinguish itself from shuffled noise.
+A different horizon or a cost-aware variant may behave differently.</p>
+<h4>Why 1000 permutations?</h4>
+<p>Resolution. The smallest attainable p-value is 1/(N+1): 0.02 at 50, 0.005 at 200, ≈0.001 at 1000. Monte Carlo error
+on p shrinks roughly with 1/√N, so 1000 is the point where a 0.05 verdict becomes stable.</p>
+<h4>Why is walk-forward so much slower?</h4>
+<p>It re-runs the full lookback sweep at every step, inside every permutation. Cost scales with
+steps × grid size × permutations. Turbo, a coarser grid step, or daily bars are the three effective levers.</p>
+<h4>Are the seeds really fixed?</h4>
+<p>Yes — tests use seed 69, the anatomy draw uses 4242, and the reference pair uses 7. Identical inputs give identical
+outputs, which is what makes a reported result checkable.</p>
+<h4>Can I trust the reference CSVs as market data?</h4>
+<p>No. They are a seeded synthetic pair designed to behave like crypto, provided so the workflow can be exercised and
+reproduced offline. Use exchange history for any claim about the real market.</p>
+<h4>What exactly does the Turbo toggle change?</h4>
+<p>Nothing mathematically. It replaces the pandas loops with suffix-extreme matrices and segment cumulative sums.
+Turn it off to run the literal reference implementation and confirm the numbers agree.</p>
+<h4>Why is my equity curve flat at the start?</h4>
+<p>It should not be for walk-forward: only out-of-sample bars are drawn. For the other pipelines the warm-up period is
+flat by design — the channel, the MAs and the tree features need history before the first position.</p>
+</div>
+""", unsafe_allow_html=True)
+
+    sec("V", "Glossary")
+    st.table(pd.DataFrame(
+        {"Meaning": [
+            "Gross profit divided by gross loss; scale-free, ignores path and drawdown.",
+            "(1 + #permuted PF ≥ real PF) / (N + 1); the real run is one observation.",
+            "One shuffled universe: same bars, same distribution, no serial dependence.",
+            "The distribution of the best PF the pipeline achieves on noise.",
+            "Bars used to choose parameters; never scored in walk-forward.",
+            "Bars traded with parameters chosen before them; the only bars walk-forward scores.",
+            "Mean / standard deviation of per-bar returns; annualised by √(bars per year).",
+            "Peak-to-trough fall in cumulative log return.",
+            "Correlation of a series with its own lag; |returns| reveals volatility clustering.",
+            "Var(q-bar returns) / (q · Var(1-bar returns)); >1 trend-like, <1 mean-reverting.",
+        ]},
+        index=["Profit factor", "MCPT p-value", "Permutation", "Null distribution",
+               "Training window", "Out-of-sample", "Sharpe", "Max drawdown",
+               "ACF", "Variance ratio"]))
+
+    sec("K", "Before you report a result")
+    st.markdown(
+        """
+<div class="panel">
+<ul>
+  <li><b>State the feed.</b> File name or reference pair, date range, bar size, bar count.</li>
+  <li><b>State the procedure.</b> Pipeline, grid, training window and step, tree caps or MA pair.</li>
+  <li><b>State N and p.</b> Permutations completed, real PF, noise median, p-value.</li>
+  <li><b>Show the null.</b> Include the histogram and the equity panel, not just the headline number.</li>
+  <li><b>Report the neighbours.</b> One adjacent bar size and one adjacent grid setting.</li>
+  <li><b>Declare costs.</b> Every figure here is gross; say so explicitly.</li>
+</ul>
+<p>The results JSON exported from the Lab already carries the full configuration and every permuted profit factor —
+attach it, and the run can be reproduced exactly.</p>
+</div>
 """, unsafe_allow_html=True)
 
     sec("C", "Complete source — every file, runnable")
