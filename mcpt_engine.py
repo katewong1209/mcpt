@@ -1,9 +1,9 @@
 """MCPT worker — runs in a background thread, streams results into a plain dict.
 
-p-value convention (faithful to the reference scripts): the real run counts as
-one observation. better starts at 1; N-1 permutations are generated;
-    p = better / (completed + 1)   ->   better / N when the full run completes.
-Seeds are fixed internally (cfg['seed']) and are not user-editable.
+Full-N permutation loop: N actual shuffles are generated (default 1000).
+The real run is counted as one extra observation, so
+    p = (1 + #{perm_PF >= real_PF}) / (N + 1)
+which is the standard correction that keeps p strictly positive.
 """
 import time
 import traceback
@@ -30,7 +30,7 @@ STRAT_LABELS = {
     "ma": "MA Crossover",
 }
 
-MAX_SAMPLE_CURVES = 24
+MAX_SAMPLE_CURVES = 12
 CURVE_PTS = 1400
 
 
@@ -62,6 +62,7 @@ def run_mcpt(job, btc, cfg):
         turbo = bool(cfg["turbo"])
         lb = (cfg["lb_min"], cfg["lb_max"], cfg["lb_step"])
         job["label"] = STRAT_LABELS[strat]
+        job["n_target"] = n
 
         # ---------------- real baseline ----------------
         job["phase"] = "Optimizing real baseline…"
@@ -112,12 +113,8 @@ def run_mcpt(job, btc, cfg):
             job["wf_train"] = tw
             c = work_df["close"].to_numpy()
             if turbo:
-                sig, choices = walkforward_donch_fast(
-                    c, tw, tstep, *lb, return_choices=True
-                )
-                job["wf_choices"] = [
-                    (work_df.index[min(t, len(work_df) - 1)], int(b)) for t, b in choices
-                ]
+                sig, choices = walkforward_donch_fast(c, tw, tstep, *lb, return_choices=True)
+                job["wf_choices"] = choices
             else:
                 sig = walkforward_donch(work_df, tw, tstep, *lb)
             real_rets = sig * _rets(c)
@@ -138,14 +135,14 @@ def run_mcpt(job, btc, cfg):
         job["real_pf"] = float(real_pf)
         job["real_curve"] = _equity(real_rets)[::step]
 
-        # ---------------- permutation loop ----------------
+        # ---------------- permutation loop: FULL N shuffles ----------------
         job["phase"] = "Permuting universes…"
         wf_mode = strat == "donchian_wf"
-        for i in range(1, n):
+        for i in range(n):
             if job["stop"].is_set():
                 job["status"] = "stopped"
                 break
-            seed = base + i
+            seed = base + i + 1
 
             if wf_mode:
                 perm = get_permutation(work_df, start_index=tw, seed=seed)
@@ -155,45 +152,39 @@ def run_mcpt(job, btc, cfg):
                 else:
                     psig = walkforward_donch(perm, tw, tstep, *lb)
                 ppf = profit_factor_np(psig * _rets(pc))
-                if i <= MAX_SAMPLE_CURVES:
+                if i < MAX_SAMPLE_CURVES:
                     job["sample_curves"].append(_equity(psig * _rets(pc))[::step])
 
             elif strat == "donchian_is":
                 perm = get_permutation(work_df, seed=seed)
                 if turbo:
-                    pL, ppf, _, pcurve = optimize_donchian_fast(
-                        perm["close"].to_numpy(), *lb
-                    )
+                    pL, ppf, _, pcurve = optimize_donchian_fast(perm["close"].to_numpy(), *lb)
                     m = np.isfinite(pcurve)
                     job["env_cnt"][m] += 1
                     job["env_sum"][m] += pcurve[m]
                     job["env_ssq"][m] += pcurve[m] ** 2
                 else:
                     pL, ppf = optimize_donchian(perm, *lb)
-                if i <= MAX_SAMPLE_CURVES:
+                if i < MAX_SAMPLE_CURVES:
                     psig = (
                         breakout_signal_np(perm["close"].to_numpy(), pL)
                         if pL > 0
                         else np.full(len(perm), np.nan)
                     )
-                    job["sample_curves"].append(
-                        _equity(psig * _rets(perm["close"]))[::step]
-                    )
+                    job["sample_curves"].append(_equity(psig * _rets(perm["close"]))[::step])
 
             elif strat == "tree":
                 perm = get_permutation(work_df, seed=seed)
                 pm = train_tree(perm, cfg["tree_leaf"], cfg["tree_depth"])
                 psig, ppf = tree_strategy(perm, pm)
-                if i <= MAX_SAMPLE_CURVES:
+                if i < MAX_SAMPLE_CURVES:
                     pr = pd.Series(_rets(perm["close"]), index=perm.index)
                     job["sample_curves"].append(_equity((psig * pr).to_numpy())[::step])
 
             else:  # ma
                 perm = get_permutation(work_df, seed=seed)
-                psig, ppf = ma_crossover(
-                    perm, cfg["ma_fast"], cfg["ma_slow"], cfg["ma_short"]
-                )
-                if i <= MAX_SAMPLE_CURVES:
+                psig, ppf = ma_crossover(perm, cfg["ma_fast"], cfg["ma_slow"], cfg["ma_short"])
+                if i < MAX_SAMPLE_CURVES:
                     pr = np.log(perm["close"]).diff().shift(-1)
                     job["sample_curves"].append(_equity((psig * pr).to_numpy())[::step])
 
@@ -201,8 +192,8 @@ def run_mcpt(job, btc, cfg):
             job["perm_pfs"].append(ppf)
             if ppf >= job["real_pf"]:
                 job["better"] += 1
-            job["done"] = i
-            job["p"] = job["better"] / (i + 1)
+            job["done"] = i + 1
+            job["p"] = job["better"] / (job["done"] + 1)
 
         if job["status"] == "running":
             job["status"] = "done"
