@@ -1,4 +1,4 @@
-"""Seeded synthetic BTC/ETH hourly OHLC feed used when real parquet files are absent.
+"""Seeded synthetic BTC/ETH hourly OHLC feed used when no file is uploaded.
 
 GARCH(1,1) volatility clustering, fat-tailed t(4) innovations, slow AR(1) trend
 regimes, rare jumps, correlated cross-market shocks, realistic intrabar wicks.
@@ -22,9 +22,7 @@ def _ohlc_from_rets(index, rets, sigma, s0, gaps, wick_u, wick_d):
     op = prev * np.exp(gaps)
     hi = np.maximum(op, close) * np.exp(wick_u * sigma)
     lo = np.minimum(op, close) * np.exp(-wick_d * sigma)
-    return pd.DataFrame(
-        {"open": op, "high": hi, "low": lo, "close": close}, index=index
-    )
+    return pd.DataFrame({"open": op, "high": hi, "low": lo, "close": close}, index=index)
 
 
 def make_synthetic_pair(seed: int = 7):
