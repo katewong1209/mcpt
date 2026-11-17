@@ -29,9 +29,9 @@ from moving_average import ma_crossover
 from tree_strat import train_tree, tree_strategy
 
 STRAT_LABELS = {
-    "donchian_is": "Donchian · In-Sample (optimized)",
-    "donchian_wf": "Donchian · Walk-Forward",
-    "tree": "Decision Tree · In-Sample",
+    "donchian_is": "Donchian Breakout",
+    "donchian_wf": "Donchian Walk-Forward",
+    "tree": "Decision Tree",
     "ma": "MA Crossover",
 }
 
