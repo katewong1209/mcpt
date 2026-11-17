@@ -77,8 +77,6 @@ def get_permutation(
         pb[perm_index:, 2] = opens + rel_l[m]
         pb[perm_index:, 3] = closes
 
-        out.append(
-            pd.DataFrame(np.exp(pb), index=time_index, columns=OHLC)
-        )
+        out.append(pd.DataFrame(np.exp(pb), index=time_index, columns=OHLC))
 
     return out if n_markets > 1 else out[0]
