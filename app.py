@@ -1064,7 +1064,7 @@ def onboarding():
   and asks how often noise alone beats your real result. </p>
   <div class="steps">
     <div class="step"><div class="n">01</div><div class="h">Pick a bar size</div><div class="b">Hourly, daily, monthly or yearly. Every window, lookback and feature span is counted in bars of that size and auto-fits your data.</div></div>
-    <div class="step"><div class="n">02</div><div class="h">Shuffle 1000 universes</div><div class="b">Intrabar shape and gaps permuted separately. Mean/std/skew/kurt survive; volatility clustering and long memory die.</div></div>
+    <div class="step"><div class="n">02</div><div class="h">Determine amount of variations</div><div class="b">Intrabar shape and gaps permuted separately. Mean/std/skew/kurt survive; volatility clustering and long memory die.</div></div>
     <div class="step"><div class="n">03</div><div class="h">Compare &amp; verdict</div><div class="b">p = (1 + #noise-PF ≥ real-PF) / (N + 1). If noise matches your edge, the edge is a mirage. Watch the histogram build live.</div></div>
   </div>
   <div class="callout" style="margin-top:.85rem"><b>→ Load Currency 1, choose a bar size and a pipeline, press RUN PERMUTATION TEST.</b> Results stream as they compute; stop anytime. Mechanics, strengths and weaknesses are in Method &amp; Guide.</div>
