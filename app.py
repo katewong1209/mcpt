@@ -147,10 +147,6 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 .sb-tag{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--muted);letter-spacing:.16em;margin-top:.35rem;}
 
 .hero{position:relative;padding:.6rem 0 .2rem;}
-.hero .tape{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.26em;color:var(--cyan);}
-.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);
-  box-shadow:0 0 10px var(--green);margin-right:.55rem;animation:pulse 1.9s infinite;}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .hero h1{font-size:clamp(1.9rem,3.6vw,2.9rem);font-weight:700;letter-spacing:-.025em;
   margin:.3rem 0 .1rem;line-height:1.06;color:var(--text);}
 .hero h1 .grad{display:block;background:linear-gradient(92deg,var(--btc) 5%,var(--magenta) 52%,var(--cyan) 95%);
@@ -261,6 +257,13 @@ div[data-baseweb="tab-border"]{background:var(--line);}
 [data-baseweb="checkbox"] [aria-checked="true"]{background-color:var(--btc) !important;}
 [data-testid="stFileUploaderDropzone"]{background:var(--panel2);border:1px dashed rgba(247,147,26,.4);border-radius:12px;}
 [data-testid="stFileUploaderDropzoneInstructions"] span{color:var(--muted);}
+/* upload cap wording — update the text if [server] maxUploadSize is changed */
+[data-testid="stFileUploaderDropzoneInstructions"] small{
+  font-size:0 !important;line-height:0 !important;display:block;}
+[data-testid="stFileUploaderDropzoneInstructions"] small::after{
+  content:"max 200 MB per file · CSV, PQ, PARQUET";
+  display:block;font-size:.72rem;line-height:1.45;color:var(--muted);
+  font-family:'IBM Plex Mono',monospace;}
 [data-testid="stProgress"] div[role="progressbar"]{background:rgba(139,148,171,.15);}
 [data-testid="stProgress"] div[role="progressbar"]>div{background:linear-gradient(90deg,var(--btc),var(--magenta),var(--cyan));}
 [data-testid="stExpander"] details{background:var(--panel);border:1px solid var(--line);border-radius:12px;}
@@ -333,6 +336,37 @@ def num_slider(label, lo, hi, default, key):
     if v is not None and not (lo <= int(v) <= hi):
         st.session_state.pop(key, None)
     return int(st.slider(label, lo, hi, int(min(max(int(default), lo), hi)), key=key))
+
+
+def year_bounds(df):
+    """(first selectable year, upper bound). End-exclusive, and always reaches the
+    current calendar year so new data never needs a code change."""
+    now = int(pd.Timestamp.now(tz="UTC").year)
+    if df is None or len(df) == 0:
+        return now - 1, now + 1
+    ymin = int(df.index.year.min())
+    last = int(df.index.year.max())
+    return ymin, int(max(max(last, now) + 1, ymin + 1))
+
+
+def year_defaults(df):
+    """(in-sample default, walk-forward default) derived from the loaded feed.
+    In-sample keeps the final data year as a hold-out; walk-forward uses everything."""
+    ymin, ymax = year_bounds(df)
+    last = int(df.index.year.max()) if df is not None and len(df) else ymax - 1
+    is_end = int(max(ymin + 1, min(last, ymax - 1)))
+    return (ymin, is_end), (ymin, int(max(last + 1, ymin + 1)))
+
+
+def clamp_years(v, lo, hi, fallback):
+    """Keep a stored year range inside the current bounds, always with start < end."""
+    try:
+        a, b = int(v[0]), int(v[1])
+    except Exception:
+        return fallback
+    a = max(lo, min(a, hi - 1))
+    b = max(a + 1, min(b, hi))
+    return a, b
 
 
 def fmt_n(x, spec="{:.3f}", dash="—"):
@@ -736,8 +770,11 @@ def collect_cfg():
     if lbmin >= lbmax:
         lbmin, lbmax = min(lbmin, lbmax - 1), max(lbmax, lbmin + 1)
     lbmin = max(2, lbmin)
-    is_years = g("w_is_years", (2016, 2020))
-    wf_years = g("w_wf_years", (2016, 2021))
+    _btc = st.session_state.get("btc_df")
+    ylo, yhi = year_bounds(_btc)
+    is_def, wf_def = year_defaults(_btc)
+    is_years = clamp_years(g("w_is_years", is_def), ylo, yhi, is_def)
+    wf_years = clamp_years(g("w_wf_years", wf_def), ylo, yhi, wf_def)
     fast, slow = int(g("w_maf", d["ma_fast"])), int(g("w_mas", d["ma_slow"]))
     if fast >= slow:
         fast, slow = max(1, slow - 1), slow
@@ -1343,7 +1380,8 @@ with st.sidebar:
             up2 = st.file_uploader("Currency 2 (optional, for correlation)",
                                    type=["pq", "parquet", "csv"], key="up_2",
                                    help="Same schema and timestamps as Currency 1 · max 200 MB per file")
-        st.caption("No file? Download the reference pair in Method & Guide → Data.")
+        st.caption("max 200 MB per file · CSV, PQ or Parquet. "
+                   "No file? Download the reference pair in Method & Guide → Data.")
 
     notice = None
     try:
@@ -1373,10 +1411,13 @@ with st.sidebar:
     dflt = tf_defaults(tf)
     unit = TF_UNIT[tf]
     n_bars = len(btc_df)
-    ymin = int(btc_df.index.year.min())
-    ymax = int(btc_df.index.year.max()) + 1
-    st.caption(f"{src_label} · {n_bars:,} {unit} bars · {ymin}–{ymax-1}" +
+    ymin, ymax = year_bounds(btc_df)          # detects the latest data year and the current year
+    is_def, wf_def = year_defaults(btc_df)
+    data_last = int(btc_df.index.year.max())
+    st.caption(f"{src_label} · {n_bars:,} {unit} bars · data {ymin}–{data_last}" +
                (" · currency 2 loaded" if eth_df is not None else ""))
+    if ymax - 1 > data_last:
+        st.caption(f"Year sliders run to {ymax - 1} (current year); this feed ends in {data_last}.")
     if n_bars < 30:
         st.caption(f"⚠ {n_bars} {unit} bars — the test still runs, but such a small sample is indicative only.")
 
@@ -1396,12 +1437,11 @@ with st.sidebar:
 
     if strategy in ("donchian_is", "tree"):
         sanitize_range("w_is_years", ymin, ymax)
-        d0 = (max(ymin, min(2016, ymax - 1)), min(ymax, max(2020, ymin + 1)))
-        st.slider("In-sample years (end exclusive)", ymin, ymax, d0, key="w_is_years")
+        st.slider("In-sample years (end exclusive)", ymin, ymax, is_def, key="w_is_years")
 
     if strategy == "donchian_wf":
         sanitize_range("w_wf_years", ymin, ymax)
-        st.slider("Walk-forward years (end exclusive)", ymin, ymax, (ymin, ymax), key="w_wf_years")
+        st.slider("Walk-forward years (end exclusive)", ymin, ymax, wf_def, key="w_wf_years")
         y0, y1 = st.session_state["w_wf_years"]
         n_win = int(((btc_df.index.year >= y0) & (btc_df.index.year < y1)).sum())
         tr = num_slider(f"Training window ({unit} bars)", 2, wf_train_max(n_win), dflt["train"], "w_wf_train")
@@ -1454,10 +1494,9 @@ unit_now = TF_UNIT[tf_now]
 st.markdown(
     f"""
 <div class="hero">
-  <div><span class="pulse"></span><span class="tape">MONTE CARLO PERMUTATION TESTING · {TF_LABEL[tf_now].upper()} BARS</span></div>
   <h1>Permutation Tests<span class="grad">Trading Strategies</span></h1>
   <div class="sub">Optimization always induces <b>data-mining bias</b>. This terminal re-runs your fully-optimized pipeline on
-  <b>{cfg_now['n_perms']:,} shuffled universes of your choosing</b> — same distribution, zero memory — at the bar size you choose, and measures how often noise alone beats you.</div>
+  <b>various reference benchmarks of your choosing</b> — same distribution, zero memory — at the bar size you choose, and measures how often noise alone beats you.</div>
   <div class="chips">
     <span class="chip hot">FEED <b>{src_label}</b></span>
     <span class="chip cool">BARS <b>{TF_LABEL[tf_now]} · {len(btc_df):,}</b></span>
@@ -1705,14 +1744,14 @@ with tab_notes:
 <div class="note-sec">
   <h4>6 · What this implies for each pipeline</h4>
   <ul>
-    <li><b>Donchian, in-sample.</b> With dependence this weak at lag 1 and tails this heavy, the lookback sweep has
+    <li><b>Donchian Breakout.</b> With dependence this weak at lag 1 and tails this heavy, the lookback sweep has
     ample room to fit noise. Read the amber curve against the noise envelope, never on its own.</li>
-    <li><b>Donchian, walk-forward.</b> The most defensible of the four: parameters are re-chosen on trailing bars and
+    <li><b>Donchian Walk-Forward.</b> The most defensible of the four: parameters are re-chosen on trailing bars and
     scored only out-of-sample. Expect a lower profit factor than in-sample — that drop is the honest price of selection.</li>
-    <li><b>Decision tree.</b> With |returns| persistence at {b['acf1_abs']:+.3f} and near-zero return autocorrelation,
+    <li><b>Decision Tree.</b> With |returns| persistence at {b['acf1_abs']:+.3f} and near-zero return autocorrelation,
     a flexible classifier can appear skilful by learning volatility state rather than direction. Cap depth, raise the
     leaf size, and re-run.</li>
-    <li><b>MA crossover.</b> No optimizer, so a low p-value here is the cleanest evidence of a genuine trend pattern —
+    <li><b>MA Crossover.</b> No optimizer, so a low p-value here is the cleanest evidence of a genuine trend pattern —
     but long/flat also embeds a bet on positive drift, which the {b['total']:+.3f} cumulative log return makes explicit.</li>
   </ul>
 </div>
@@ -1756,6 +1795,9 @@ The question is whether your pipeline's result is distinguishable from what the 
 (open = first, high = max, low = min, close = last). Lookbacks, the walk-forward training window and step, the MA pair, the tree's
 momentum spans and label horizon, and the ACF lags are all counted in <b>bars of that size</b> and auto-fit the sample — there is no
 minimum bar count. Permutation is applied to those same bars, so the null always matches what the strategy trades.</div>
+<div class="callout cool"><b>Year ranges are automatic.</b> The date sliders start at the first year in your data and end one past
+the later of (your last data year, the current calendar year), so the current year is always selectable and nothing is hard-coded.
+Defaults follow the data: in-sample keeps the final data year as a hold-out, walk-forward uses the full range.</div>
 <div class="pd-grid">
   <div class="pd keep"><h4>✓ PRESERVED by bar permutation</h4><ul>
     <li><b>Marginal distribution</b> of returns — mean, std, skew, kurtosis</li>
@@ -1855,7 +1897,7 @@ convert and rename, then keep the four price columns.</p>
   <li><b>Choose a bar size.</b> Start with <b>Daily</b>: enough bars for stable statistics, fast enough for 1000 permutations.
       Hourly is the reference setting; monthly and yearly are for coarse regime questions.</li>
   <li><b>Choose a pipeline.</b> Begin with <b>MA Crossover</b> — no optimizer, so the result is easy to interpret.
-      Then run <b>Donchian in-sample</b> to see selection bias appear, and <b>Donchian walk-forward</b> for the honest version.</li>
+      Then run <b>Donchian Breakout</b> to see selection bias appear, and <b>Donchian Walk-Forward</b> for the honest version.</li>
   <li><b>Set permutations.</b> 200 for a smoke test, <b>1000</b> for anything you intend to report. Keep Turbo on.</li>
   <li><b>Run and read.</b> Watch the histogram build. When it finishes, read the verdict, then the equity panel, then the
       PF-vs-lookback surface. Download the JSON — it contains the full configuration and every permuted PF.</li>
@@ -1869,7 +1911,7 @@ convert and rename, then keep the four price columns.</p>
     st.markdown(
         """
 <div class="strat-block">
-  <div class="hd"><span class="nm">1 · Donchian Breakout — In-Sample (optimized)</span><span class="tagline">TREND / BREAKOUT · 1 PARAMETER SWEPT</span></div>
+  <div class="hd"><span class="nm">1 · Donchian Breakout</span><span class="tagline">TREND / BREAKOUT · 1 PARAMETER SWEPT</span></div>
   <ol>
     <li>Channel from the <b>prior L−1 closes</b>: upper = rolling max, lower = rolling min, both <b>shifted one bar</b> — causal.</li>
     <li>Close above upper → <b>+1</b>; below lower → <b>−1</b>; otherwise hold until the opposite break.</li>
@@ -1894,7 +1936,7 @@ convert and rename, then keep the four price columns.</p>
 </div>
 
 <div class="strat-block">
-  <div class="hd"><span class="nm">2 · Donchian Breakout — Walk-Forward</span><span class="tagline">SAME RULE · RE-OPTIMIZED OUT OF SAMPLE</span></div>
+  <div class="hd"><span class="nm">2 · Donchian Walk-Forward</span><span class="tagline">SAME RULE · RE-OPTIMIZED OUT OF SAMPLE</span></div>
   <ol>
     <li>Reserve a training window measured in <b>bars of the selected timeframe</b>, auto-fitted to the sample.</li>
     <li>At each step, sweep <b>only the trailing training window</b>, then trade the next step's unseen bars.</li>
@@ -1919,7 +1961,7 @@ convert and rename, then keep the four price columns.</p>
 </div>
 
 <div class="strat-block">
-  <div class="hd"><span class="nm">3 · Decision Tree Classifier</span><span class="tagline">NON-LINEAR MOMENTUM · SUPERVISED</span></div>
+  <div class="hd"><span class="nm">3 · Decision Tree</span><span class="tagline">NON-LINEAR MOMENTUM · SUPERVISED</span></div>
   <ol>
     <li>Three momentum features whose spans <b>scale with the bar size</b> (hourly 6/24/168, daily 1/5/21, monthly 1/3/12, yearly 1/2/3).</li>
     <li>Label: sign of the next <b>horizon</b> bars, mapped to {0, 1}; incomplete rows dropped.</li>
@@ -1945,7 +1987,7 @@ convert and rename, then keep the four price columns.</p>
 </div>
 
 <div class="strat-block">
-  <div class="hd"><span class="nm">4 · Moving-Average Crossover</span><span class="tagline">TREND FILTER · LONG/FLAT (OPTIONAL SHORT)</span></div>
+  <div class="hd"><span class="nm">4 · MA Crossover</span><span class="tagline">TREND FILTER · LONG/FLAT (OPTIONAL SHORT)</span></div>
   <ol>
     <li>Fast and slow SMA of close, defaults scaled to the bar size.</li>
     <li>Fast above slow → <b>long</b>; otherwise <b>flat</b>, or <b>short</b> if enabled.</li>
@@ -2008,6 +2050,7 @@ MCPT prices the procedure you actually ran; if you tried several pipelines and o
                 "Coarse bar size, or a long MA/lookback on a short sample",
                 "Feature spans plus label horizon exceed the rows available",
                 "Date range or bar size leaves almost nothing to trade",
+                "Year range extends past the end of the loaded data",
                 "Missing / misnamed OHLC columns, or a non-datetime first column",
                 "Fewer than 8 usable rows after cleaning",
                 "File larger than the upload cap",
@@ -2018,6 +2061,7 @@ MCPT prices the procedure you actually ran; if you tried several pipelines and o
                 "Pick a finer bar size, widen the range, lower the grid, or allow shorts",
                 "Use daily or hourly bars, or widen the date range",
                 "Widen the years; the sidebar shows the auto-fitted train / step / OOS counts",
+                "The sidebar shows the data's last year — drag the end back to it, or load newer data",
                 "Match the schema in section D; extra columns are fine, names are lower-cased",
                 "Check for non-positive prices, NaNs and duplicate timestamps",
                 "Resample to daily before upload, or split by year (max 200 MB per file)",
@@ -2029,6 +2073,7 @@ MCPT prices the procedure you actually ran; if you tried several pipelines and o
             "“The strategy never traded on this sample”",
             "“Only N usable rows for the tree”",
             "“Only N bar(s) at this timeframe”",
+            "“Only 0 bar(s) in that date range”",
             "“needs columns open / high / low / close”",
             "“needs at least 8 rows”",
             "Upload rejected",
@@ -2049,6 +2094,9 @@ A different horizon or a cost-aware variant may behave differently.</p>
 <h4>Why 1000 permutations?</h4>
 <p>Resolution. The smallest attainable p-value is 1/(N+1): 0.02 at 50, 0.005 at 200, ≈0.001 at 1000. Monte Carlo error
 on p shrinks roughly with 1/√N, so 1000 is the point where a 0.05 verdict becomes stable.</p>
+<h4>Why do the year sliders go past my data?</h4>
+<p>They always reach the current calendar year so new files never need a code change. The sidebar states the last year
+your feed actually contains; ranges beyond it simply select fewer bars.</p>
 <h4>Why is walk-forward so much slower?</h4>
 <p>It re-runs the full lookback sweep at every step, inside every permutation. Cost scales with
 steps × grid size × permutations. Turbo, a coarser grid step, or daily bars are the three effective levers.</p>
