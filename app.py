@@ -1266,7 +1266,7 @@ st.markdown(
   <div><span class="pulse"></span><span class="tape">MONTE CARLO PERMUTATION TESTING · {TF_LABEL[tf_now].upper()} BARS</span></div>
   <h1>Permutation Tests<span class="grad">Trading Strategies</span></h1>
   <div class="sub">Optimization always induces <b>data-mining bias</b>. This terminal re-runs your fully-optimized pipeline on
-  <b>1000 shuffled universes</b> — same distribution, zero memory — at the bar size you choose, and measures how often noise alone beats you.</div>
+  <b>1000 your chosen variations </b> — same distribution, zero memory — at the bar size you choose, and measures how often noise alone beats you.</div>
   <div class="chips">
     <span class="chip hot">FEED <b>{src_label}</b></span>
     <span class="chip cool">BARS <b>{TF_LABEL[tf_now]} · {len(btc_df):,}</b></span>
