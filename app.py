@@ -1061,7 +1061,7 @@ def onboarding():
   <h3>Is your optimized edge real — or the best-looking lie in 157 tries?</h3>
   <p>Optimization <b style="color:var(--btc2)">always</b> induces data-mining bias. This terminal rebuilds the market as
   structureless noise — same distribution, zero memory — re-runs your <i>entire</i> pipeline on each shuffled universe,
-  and asks how often noise alone beats your real result. Aim for <b style="color:var(--cyan)">1000 permutations</b>.</p>
+  and asks how often noise alone beats your real result. </p>
   <div class="steps">
     <div class="step"><div class="n">01</div><div class="h">Pick a bar size</div><div class="b">Hourly, daily, monthly or yearly. Every window, lookback and feature span is counted in bars of that size and auto-fits your data.</div></div>
     <div class="step"><div class="n">02</div><div class="h">Shuffle 1000 universes</div><div class="b">Intrabar shape and gaps permuted separately. Mean/std/skew/kurt survive; volatility clustering and long memory die.</div></div>
@@ -1240,7 +1240,7 @@ with st.sidebar:
             st.caption("Fast ≥ slow — the fast MA is auto-set to slow − 1.")
 
     st.markdown('<div class="sb-sec">04 · Permutation engine</div>', unsafe_allow_html=True)
-    st.slider("Permutations — aim for 1000", 50, 2000, 1000, step=50, key="w_perms")
+    st.slider("Permutations", 50, 2000, 1000, step=50, key="w_perms")
     st.toggle("Turbo engine (vectorized, identical math)", value=True, key="w_turbo")
     if strategy == "donchian_wf":
         st.caption("Walk-forward re-optimizes inside every permutation — the heaviest test.")
@@ -1404,10 +1404,10 @@ with tab_method:
 <div class="panel">
 <h3>Why permutation testing?</h3>
 <p>Using the best version of a strategy <b style="color:var(--text)">requires optimization</b> — and optimization
-<b style="color:var(--btc2)">always induces data-mining bias</b>: pick the best of 157 lookbacks and the winner's profit factor is inflated by selection alone.
+<b style="color:var(--btc2)">always induces data-mining bias</b>: pick the best of various lookbacks and the winner's profit factor is inflated by selection alone.
 The question is whether your pipeline's result is distinguishable from what the <i>same pipeline</i> achieves on data with no pattern at all.</p>
 <p>MCPT builds that null by shuffling bars, then re-runs the <b style="color:var(--cyan)">entire procedure — optimization included —</b> on every permuted universe.
-<b style="color:var(--cyan)">Aim for 1000 permutations.</b></p>
+</p>
 </div>
 """, unsafe_allow_html=True)
     st.latex(r"p \;=\; \frac{1 \;+\; \#\{\,PF^{\,perm} \;\ge\; PF^{\,real}\,\}}{N_{perm} \;+\; 1}")
