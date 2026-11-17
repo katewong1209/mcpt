@@ -23,7 +23,7 @@ from donchian import (
     walkforward_donch_fast,
 )
 from market_data import make_synthetic_pair
-from mcpt_engine import STRAT_LABELS, run_mcpt
+from mcpt_engine import STRAT_LABELS, run_mcpt, wf_max_train_years, wf_min_bars, wf_plan
 from moving_average import ma_crossover
 from tree_strat import train_tree, tree_strategy
 
@@ -76,9 +76,9 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 [data-testid="stSidebarCollapseButton"] button span,
 [data-testid="stSidebarCollapsedControl"] button span,
 [data-testid="stExpandSidebarButton"] span{font-size:0 !important;line-height:0 !important;}
-[data-testid="stSidebarCollapseButton"] button::after{content:"\\2039\\2039";}
-[data-testid="stSidebarCollapsedControl"] button::after{content:"\\203A\\203A";}
-[data-testid="stExpandSidebarButton"]::after{content:"\\203A\\203A";}
+[data-testid="stSidebarCollapseButton"] button::after{content:"20392039";}
+[data-testid="stSidebarCollapsedControl"] button::after{content:"203A203A";}
+[data-testid="stExpandSidebarButton"]::after{content:"203A203A";}
 [data-testid="stSidebarCollapseButton"] button::after,
 [data-testid="stSidebarCollapsedControl"] button::after,
 [data-testid="stExpandSidebarButton"]::after{
@@ -328,15 +328,64 @@ def hist_fig(perm_pfs, real_pf, p, live=False):
 
 
 def equity_fig(x, real_eq, samples, title="Equity — real vs permuted universes (Σ log return)"):
-    fig = base_fig(370, title)
-    for i, s in enumerate(samples):
-        fig.add_trace(go.Scatter(x=x[: len(s)], y=s, mode="lines",
-                                 line=dict(color=C["cyan"], width=1), opacity=.26,
-                                 showlegend=(i == 0), name="Permuted strategies", hoverinfo="skip"))
-    fig.add_trace(go.Scatter(x=x[: len(real_eq)], y=real_eq, mode="lines",
-                             line=dict(color=C["btc"], width=2.6), name="Real strategy"))
-    fig.add_hline(y=0, line_color="rgba(139,148,171,.35)", line_width=1)
+    fig = base_fig(390, title)
+    x = np.asarray(x)
+    real = finite_only(real_eq)
+    curves = [finite_only(s) for s in samples if len(s)]
+
+    if curves:
+        m = min(len(c) for c in curves)
+        mat = np.vstack([c[:m] for c in curves])
+        xx = x[:m]
+        for cy in mat:
+            fig.add_trace(go.Scatter(x=xx, y=cy, mode="lines",
+                                     line=dict(color=C["cyan"], width=1.1), opacity=.45,
+                                     showlegend=False, hoverinfo="skip", name="Permuted universe"))
+        lo10, hi10 = np.nanpercentile(mat, 10, axis=0), np.nanpercentile(mat, 90, axis=0)
+        fig.add_trace(go.Scatter(x=np.concatenate([xx, xx[::-1]]),
+                                 y=np.concatenate([hi10, lo10[::-1]]),
+                                 fill="toself", fillcolor="rgba(34,211,238,.14)", line=dict(width=0),
+                                 hoverinfo="skip", name=f"Permuted 10–90% · {len(mat)} paths"))
+        fig.add_trace(go.Scatter(x=xx, y=np.nanmedian(mat, axis=0), mode="lines",
+                                 line=dict(color=C["cyan"], width=1.7, dash="dot"),
+                                 hoverinfo="skip", name="Permuted median"))
+
+    # real path last => always on top of the noise bundle (halo + crisp line)
+    fig.add_trace(go.Scatter(x=x[:len(real)], y=real, mode="lines",
+                             line=dict(color=C["btc"], width=8), opacity=.18,
+                             showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=x[:len(real)], y=real, mode="lines",
+                             line=dict(color=C["btc"], width=2.8), name="Real strategy",
+                             hovertemplate="real ΣlogR %{y:+.3f}<extra></extra>"))
+    fig.add_hline(y=0, line_color="rgba(139,148,171,.45)", line_width=1)
+    fig.update_layout(hovermode="x unified", legend=dict(orientation="h", y=1.14, x=0))
     fig.update_yaxes(title="Σ log return")
+    return fig
+
+
+def rebased_fig(x, lcr, lcp, title="One real market vs one permuted universe (log price, rebased)"):
+    fig = base_fig(370, title)
+    x = np.asarray(x); yr = finite_only(lcr); yp = finite_only(lcp)
+    n = min(len(x), len(yr), len(yp)); x, yr, yp = x[:n], yr[:n], yp[:n]
+    fig.add_trace(go.Scatter(x=x, y=yr, mode="lines", name="Real market",
+                             line=dict(color=C["btc"], width=2.8),
+                             hovertemplate="real %{y:+.3f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=x, y=yp, mode="lines", name="Permuted universe",
+                             line=dict(color=C["cyan"], width=1.8),
+                             fill="tonexty", fillcolor="rgba(139,123,255,.14)",
+                             hovertemplate="permuted %{y:+.3f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=x, y=yr, mode="lines", line=dict(color=C["btc"], width=2.8),
+                             showlegend=False, hoverinfo="skip"))
+    fig.add_hline(y=0, line_color="rgba(139,148,171,.45)", line_width=1)
+    if n and np.isfinite(yr[-1]) and np.isfinite(yp[-1]):
+        fig.add_trace(go.Scatter(x=[x[-1]], y=[yr[-1]], mode="markers", showlegend=False,
+                                 hoverinfo="skip",
+                                 marker=dict(size=8, color=C["btc"], line=dict(color=C["text"], width=1))))
+        fig.add_annotation(x=x[-1], y=float(yr[-1]), xanchor="right", yanchor="bottom",
+                           showarrow=False, font=dict(color=C["muted"], size=10),
+                           text=f"same bars, same total return ({yr[-1]:+.2f}) — different path")
+    fig.update_layout(hovermode="x unified")
+    fig.update_yaxes(title="log price · rebased to 0")
     return fig
 
 
@@ -601,6 +650,13 @@ def collect_cfg():
         lbmin, lbmax = min(lbmin, lbmax - 1), max(lbmax, lbmin + 1)
     is_years = g("w_is_years", (2016, 2020))
     wf_years = g("w_wf_years", (2016, 2021))
+    wf_step = int(g("w_wf_step", 30))
+    wf_train = int(g("w_wf_train", 4))
+    _btc = st.session_state.get("btc_df")
+    if _btc is not None:                      # never let a stale slider value break the run
+        _y = _btc.index.year
+        _n = int(((_y >= int(wf_years[0])) & (_y < int(wf_years[1]))).sum())
+        wf_train = int(min(max(wf_train, 1), max(wf_max_train_years(_n, wf_step), 1)))
     return dict(
         strategy=g("w_strategy", "donchian_is"),
         n_perms=int(g("w_perms", 1000)),
@@ -609,8 +665,8 @@ def collect_cfg():
         lb_min=lbmin, lb_max=lbmax, lb_step=int(g("w_lbstep", 1)),
         is_start=int(is_years[0]), is_end=int(is_years[1]),
         wf_start=int(wf_years[0]), wf_end=int(wf_years[1]),
-        wf_train_years=int(g("w_wf_train", 4)),
-        wf_step_days=int(g("w_wf_step", 30)),
+        wf_train_years=wf_train,
+        wf_step_days=wf_step,
         tree_leaf=int(g("w_leaf", 5)),
         tree_depth=None if depth == "Unlimited" else int(depth),
         ma_fast=int(g("w_maf", 10)), ma_slow=int(g("w_mas", 30)),
@@ -632,6 +688,14 @@ def start_run():
     if cfg["strategy"] == "ma" and cfg["ma_fast"] >= cfg["ma_slow"]:
         st.session_state["run_error"] = "Fast MA must be shorter than slow MA."
         return
+    if cfg["strategy"] == "donchian_wf":
+        y = btc.index.year
+        n_win = int(((y >= cfg["wf_start"]) & (y < cfg["wf_end"])).sum())
+        try:
+            wf_plan(n_win, cfg["wf_train_years"], cfg["wf_step_days"])
+        except ValueError as ex:
+            st.session_state["run_error"] = str(ex)
+            return
     job = dict(
         id=uuid.uuid4().hex[:10], status="running", phase="Initializing…",
         config=cfg, start=time.time(), done=0, better=1, p=1.0,
@@ -734,15 +798,21 @@ def compute_details(btc, cfg):
             extra["best_L"] = bL
 
         elif strat == "donchian_wf":
-            tw = cfg["wf_train_years"] * 24 * 365
-            tstep = cfg["wf_step_days"] * 24
-            if len(win) <= tw + 10:
-                return {"error": "Walk-forward window must exceed the training window."}
+            try:
+                tw, tstep, n_oos = wf_plan(len(win), cfg["wf_train_years"], cfg["wf_step_days"])
+            except ValueError as ex:
+                return {"error": str(ex)}
             if cfg["turbo"]:
                 sig, choices = walkforward_donch_fast(c, tw, tstep, cfg["lb_min"], cfg["lb_max"], cfg["lb_step"], return_choices=True)
                 extra["wf_choices"] = [(win.index[min(t, len(win) - 1)], int(b)) for t, b in choices]
             else:
                 sig = walkforward_donch(win, tw, tstep, cfg["lb_min"], cfg["lb_max"], cfg["lb_step"])
+            # keep the out-of-sample segment only — no in-sample bar is scored or drawn
+            sig = sig[tw:]
+            win = win.iloc[tw:]
+            c = win["close"].to_numpy()
+            r = np.empty(len(c)); r[:-1] = np.diff(np.log(c)); r[-1] = np.nan
+            extra["oos_bars"] = len(win)
 
         elif strat == "tree":
             model = train_tree(win, cfg["tree_leaf"], cfg["tree_depth"])
@@ -889,7 +959,11 @@ def result_body(job, live=False):
         show_fig(hist_fig(job["perm_pfs"], real_pf, p, live), key=f"hist_{job['id']}_{live}")
     with colB:
         if job.get("real_curve") is not None:
-            show_fig(equity_fig(job["curve_x"], job["real_curve"], job["sample_curves"]), key=f"eq_{job['id']}_{live}")
+            eq_title = ("Equity — out-of-sample only · real vs permuted universes (Σ log return)"
+                        if job.get("oos_start") else
+                        "Equity — real vs permuted universes (Σ log return)")
+            show_fig(equity_fig(job["curve_x"], job["real_curve"], job["sample_curves"], eq_title),
+                     key=f"eq_{job['id']}_{live}")
         else:
             st.info("Equity curves appear once the baseline finishes.")
 
@@ -945,7 +1019,7 @@ def onboarding():
   <div class="steps">
     <div class="step"><div class="n">01</div><div class="h">Optimize on real bars</div><div class="b">Donchian lookback sweep, walk-forward re-training, decision tree, or MA crossover — the full selection procedure, bias included.</div></div>
     <div class="step"><div class="n">02</div><div class="h">Shuffle 1000 universes</div><div class="b">Intrabar shape and gaps permuted separately. Mean/std/skew/kurt survive; volatility clustering and long memory die.</div></div>
-    <div class="step"><div class="n">03</div><div class="h">Compare &amp; verdict</div><div class="b">p = (1 + #noise-PF ≥ real-PF) / N. If noise matches your edge, the edge is a mirage. Watch the histogram build live.</div></div>
+    <div class="step"><div class="n">03</div><div class="h">Compare &amp; verdict</div><div class="b">p = (1 + #noise-PF ≥ real-PF) / (N + 1). If noise matches your edge, the edge is a mirage. Watch the histogram build live.</div></div>
   </div>
   <div class="callout" style="margin-top:.85rem"><b>→ Upload Currency 1 in the sidebar, pick a pipeline, press RUN PERMUTATION TEST.</b> Results stream as they compute; stop anytime. Each pipeline's mechanics, strengths and weaknesses are in Method &amp; Guide.</div>
 </div>
@@ -956,20 +1030,22 @@ def onboarding():
 def live_fragment():
     job = st.session_state.get("active")
     if job is None or job.get("status") != "running":
+        if job is not None and not job.get("_finalized"):
+            finalize(job)
         st.rerun(scope="app")
         return
     cfg = job["config"]
     n_target = cfg["n_perms"]
     done = job["done"]
     elapsed = time.time() - job["start"]
-    eta = (elapsed / done) * (n_target - 1 - done) if done > 0 else None
-    st.progress(min(done / max(n_target - 1, 1), 1.0))
+    eta = (elapsed / done) * (n_target - done) if done > 0 else None
+    st.progress(min(done / max(n_target, 1), 1.0))
     p = job["better"] / (done + 1)
     c1, c2 = st.columns([4, 1])
     with c1:
         st.markdown(cards_html([
             dict(k="Phase", v="⚙ LIVE", cls="cyan", d=job.get("phase", "")),
-            dict(k="Completed", v=f"{done:,}", d=f"of {n_target-1:,} permutations"),
+            dict(k="Completed", v=f"{done:,}", d=f"of {n_target:,} permutations"),
             dict(k="Noise beats real", v=str(job["better"] - 1),
                  cls="red" if job["better"] - 1 > max(done, 1) * .2 else "green", d="count ≥ real PF", dc="warn"),
             dict(k="Live p-value", v=f"{p:.3f}", cls="cyan",
@@ -984,7 +1060,8 @@ def live_fragment():
         st.info(f"{job.get('phase','Working')} — the real-data baseline (full optimization) runs first, then permutations stream in.")
 
     if job["status"] != "running":
-        finalize(job)
+        if not job.get("_finalized"):
+            finalize(job)
         st.rerun(scope="app")
 
 
@@ -1061,11 +1138,28 @@ with st.sidebar:
         sanitize_range("w_is_years", ymin, ymax)
         d0 = (max(ymin, min(2016, ymax - 1)), min(ymax, max(2020, ymin + 1)))
         st.slider("Training years (end exclusive)", ymin, ymax, d0, key="w_is_years")
+    wf_block = None
     if strategy == "donchian_wf":
         sanitize_range("w_wf_years", ymin, ymax)
         st.slider("Walk-forward years", ymin, ymax, (ymin, ymax), key="w_wf_years")
-        st.slider("Training window (years)", 1, 4, 4, key="w_wf_train")
         st.slider("Re-optimize every (days)", 5, 90, 30, key="w_wf_step")
+        y0, y1 = st.session_state["w_wf_years"]
+        step_days = int(st.session_state.get("w_wf_step", 30))
+        n_win = int(((btc_df.index.year >= y0) & (btc_df.index.year < y1)).sum())
+        max_train = wf_max_train_years(n_win, step_days)
+        if max_train < 1:
+            wf_block = (f"Walk-forward needs at least {wf_min_bars(step_days):,} hourly bars — "
+                        f"this window has {n_win:,}. Widen the years or shorten the step.")
+            st.error(wf_block)
+        else:
+            opts = list(range(1, min(4, max_train) + 1))
+            if st.session_state.get("w_wf_train") not in opts:
+                st.session_state.pop("w_wf_train", None)
+            st.select_slider("Training window (years)", options=opts,
+                             value=min(4, max_train), key="w_wf_train")
+            tw, tstep, n_oos = wf_plan(n_win, st.session_state["w_wf_train"], step_days)
+            st.caption(f"train {tw:,} bars → out-of-sample {n_oos:,} bars · "
+                       f"{max(1, n_oos // tstep)} re-optimizations · training bars are never scored")
     if strategy == "tree":
         st.slider("min_samples_leaf", 1, 100, 5, key="w_leaf")
         st.selectbox("max_depth", ["Unlimited", 4, 6, 8, 12], format_func=str, key="w_depth")
@@ -1087,13 +1181,12 @@ with st.sidebar:
     active = st.session_state.get("active")
     running = bool(active and active.get("status") == "running")
     st.button("🧪 RUN PERMUTATION TEST", type="primary", on_click=start_run,
-              disabled=running, use_container_width=True)
+              disabled=running or bool(wf_block), use_container_width=True)
     st.button("Clear results", on_click=clear_active, disabled=running, use_container_width=True)
     if running:
-        st.caption(f"● running — {active['done']:,} / {active['config']['n_perms']-1:,}")
+        st.caption(f"● running — {active['done']:,} / {active['config']['n_perms']:,}")
     if st.session_state.get("run_error"):
         st.error(st.session_state["run_error"])
-
 
 # ---------------------------------------------------------------- header
 cfg_now = collect_cfg()
@@ -1135,6 +1228,8 @@ with tab_lab:
         history_block()
     else:
         sec("R", f"Results · {active['label']}")
+        if not active.get("_finalized"):
+            finalize(active)
         st.markdown(
             f'<div class="chips"><span class="chip hot">{active["label"]}</span>'
             f'<span class="chip">engine <b>{"turbo" if active["config"]["turbo"] else "reference"}</b></span>'
@@ -1168,6 +1263,9 @@ with tab_strat:
             dict(k="Exposure", v=f"{s['exposure']:.0%}", cls="cyan"),
             dict(k="Position changes", v=f"{s['trades']:,}", cls="cyan", d=f"{s['bars']:,} bars"),
         ]), unsafe_allow_html=True)
+        if det["extra"].get("oos_bars"):
+            st.caption(f"Walk-forward: {det['extra']['oos_bars']:,} out-of-sample bars only — "
+                       "the training block is used for re-optimization and is never scored or plotted.")
 
         ov_names = list(det["overlays"].keys())
         price_title = "Price panel" + (" · " + " / ".join(ov_names) if (show_ov and ov_names) else "")
@@ -1201,10 +1299,7 @@ with tab_anat:
 
     col1, col2 = st.columns([1.5, 1])
     with col1:
-        fig = base_fig(350, "One real market vs one permuted universe (log price, rebased)")
-        fig.add_trace(go.Scatter(x=an["x"], y=an["lcr"], mode="lines", line=dict(color=C["btc"], width=2), name="Real"))
-        fig.add_trace(go.Scatter(x=an["x"], y=an["lcp"], mode="lines", line=dict(color=C["cyan"], width=1.6), name="Permuted"))
-        show_fig(fig, key="an_price")
+        show_fig(rebased_fig(an["x"], an["lcr"], an["lcp"]), key="an_price")
     with col2:
         st.markdown('<div class="panel"><h3>Marginal distribution — preserved</h3>'
                     '<p>Shuffling rearranges bars; it cannot change the histogram of returns. Moments match to sampling noise.</p></div>',
@@ -1243,7 +1338,7 @@ distinguishable from what the <i>same pipeline</i> achieves on data with no patt
 If the optimized strategy performs just as well on noise, it is likely overfitting the real data. <b style="color:var(--cyan)">Aim for 1000 permutations.</b></p>
 </div>
 """, unsafe_allow_html=True)
-    st.latex(r"p \;=\; \frac{1 \;+\; \#\{\,PF^{\,perm} \;\ge\; PF^{\,real}\,\}}{N_{perm}}")
+    st.latex(r"p \;=\; \frac{1 \;+\; \#\{\,PF^{\,perm} \;\ge\; PF^{\,real}\,\}}{N_{perm} \;+\; 1}")
     st.caption("The real run counts as one observation (hence the +1). p ≤ 0.05 → evidence of a real pattern; p large → the optimizer is mining noise.")
 
     st.markdown(
@@ -1300,9 +1395,9 @@ significance then means the edge requires <i>serial structure</i>, not just fat 
 <div class="strat-block">
   <div class="hd"><span class="nm">2 · Donchian Breakout — Walk-Forward</span><span class="tagline">SAME RULE · RE-OPTIMIZED OUT OF SAMPLE</span></div>
   <ol>
-    <li>Reserve a training window (default <b>4 years = 35,040 hourly bars</b>). Nothing before it is traded.</li>
+    <li>Reserve a training window (default <b>4 years = 35,040 hourly bars</b>, auto-clamped to what the selected years can hold). Nothing before it is traded.</li>
     <li>At each step, run the full lookback sweep <b>only on the trailing training window</b>, then apply that lookback to the next <b>30 days</b> of unseen bars.</li>
-    <li>Roll forward by the step and repeat; stitch the out-of-sample segments into one equity curve.</li>
+    <li>Roll forward by the step and repeat; stitch the out-of-sample segments into one equity curve. <b>Only OOS bars are scored, counted and plotted.</b></li>
     <li>For MCPT, permutation starts at <code>start_index = train_window</code> — the first training block stays real, and the <b>re-optimization runs inside every permutation</b>.</li>
   </ol>
   <div class="pd-grid">
@@ -1383,10 +1478,10 @@ significance then means the edge requires <i>serial structure</i>, not just fat 
 <p><b style="color:var(--text)">1.</b> Upload Currency 1 (Currency 2 only if you want the correlation demo). <b style="color:var(--text)">2.</b> Choose a pipeline and its parameters.
 <b style="color:var(--text)">3.</b> Set permutations — 1000 is the target; 200 is a reasonable first pass for walk-forward. <b style="color:var(--text)">4.</b> Run and watch the histogram build.</p>
 <p><b style="color:var(--btc2)">Histogram</b> — the distribution of the <i>best</i> profit factor the pipeline achieves on noise. The amber line is your real result; the red tail is everything that beat it.
-<b style="color:var(--btc2)">Equity spaghetti</b> — your real curve against permuted strategies; if your curve sits inside the cyan bundle, it is indistinguishable from noise.
+<b style="color:var(--btc2)">Equity</b> — your real curve (thick amber, always on top) against the permuted bundle, its median and its 10–90% band; if your curve sits inside the band, it is indistinguishable from noise. Walk-forward plots out-of-sample bars only.
 <b style="color:var(--btc2)">Optimization surface</b> — the real PF curve against the noise mean ±1σ envelope; the vertical gap is the evidence, not the peak height.</p>
 <p><b style="color:var(--green)">p ≤ 0.05</b> edge detected · <b style="color:var(--btc2)">0.05 &lt; p ≤ 0.20</b> inconclusive · <b style="color:var(--red)">p &gt; 0.20</b> consistent with noise.
-A permutation p-value can never be smaller than 1/N — with 1000 permutations the floor is 0.001.</p>
+A permutation p-value can never be smaller than 1/(N+1) — with 1000 permutations the floor is ≈0.001.</p>
 </div>
 <div class="callout"><b>Limitations to keep in view.</b> Every result is gross of fees, slippage and funding. Profit factor is scale-free but ignores drawdown and path risk.
 MCPT prices the selection procedure you actually ran — if you also tried other pipelines and only tested the winner, the honest N is larger than what the app reports.
