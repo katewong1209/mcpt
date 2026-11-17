@@ -53,7 +53,42 @@ def _downsample(n):
 def _equity(rets):
     return np.nancumsum(np.asarray(rets, dtype=float))
 
+# ---- walk-forward geometry (single source of truth for engine + UI) ----
+BARS_PER_YEAR = 24 * 365          # hourly bars in a non-leap year
+MIN_OOS_STEPS = 2                 # at least two re-optimizations, otherwise the test is meaningless
 
+
+def wf_min_bars(step_days=30):
+    """Smallest window that can host 1 training year + MIN_OOS_STEPS OOS steps."""
+    tstep = max(int(step_days) * 24, 24)
+    return BARS_PER_YEAR + MIN_OOS_STEPS * tstep + 2
+
+
+def wf_max_train_years(n_bars, step_days=30):
+    """Largest whole training window (years) that still leaves MIN_OOS_STEPS OOS steps."""
+    tstep = max(int(step_days) * 24, 24)
+    return int(max(0, (int(n_bars) - MIN_OOS_STEPS * tstep - 2) // BARS_PER_YEAR))
+
+
+def wf_plan(n_bars, train_years, step_days=30):
+    """Clamp the walk-forward windows to the data instead of crashing.
+
+    Returns (train_bars, step_bars, oos_bars). Raises ValueError only when even a
+    one-year training window cannot fit — with an actionable message.
+    """
+    n_bars = int(n_bars)
+    tstep = max(int(step_days) * 24, 24)
+    max_years = wf_max_train_years(n_bars, step_days)
+    if max_years < 1:
+        raise ValueError(
+            f"Walk-forward needs at least {wf_min_bars(step_days):,} hourly bars in the selected "
+            f"years (found {n_bars:,}). Widen the walk-forward years, shorten the training window "
+            f"or reduce the re-optimization step."
+        )
+    years = int(min(max(int(train_years), 1), max_years))
+    tw = min(years * BARS_PER_YEAR, n_bars - MIN_OOS_STEPS * tstep - 2)
+    return int(tw), int(tstep), int(n_bars - tw)
+    
 def run_mcpt(job, btc, cfg):
     try:
         strat = cfg["strategy"]
@@ -101,27 +136,34 @@ def run_mcpt(job, btc, cfg):
                 real_rets = (sig_s * pd.Series(r, index=train.index)).to_numpy()
             work_df = train
 
-        elif strat == "donchian_wf":
+            elif strat == "donchian_wf":
             work_df = _years(btc, cfg["wf_start"], cfg["wf_end"])
-            tw = int(cfg["wf_train_years"]) * 24 * 365
-            tstep = int(cfg["wf_step_days"]) * 24
-            if len(work_df) <= tw + 10:
-                raise ValueError(
-                    "Walk-forward window must exceed the training window — widen years or shrink training."
-                )
-            job["window_desc"] = f"{cfg['wf_start']}–{cfg['wf_end']} · OOS from bar {tw:,}"
+            tw, tstep, n_oos = wf_plan(len(work_df), cfg["wf_train_years"], cfg["wf_step_days"])
             job["wf_train"] = tw
+            job["oos_start"] = tw
+            job["window_desc"] = (
+                f"{cfg['wf_start']}–{cfg['wf_end']} · train {tw:,} bars · OOS {n_oos:,} bars "
+                f"· {max(1, n_oos // tstep)} re-optimizations"
+            )
             c = work_df["close"].to_numpy()
             if turbo:
                 sig, choices = walkforward_donch_fast(c, tw, tstep, *lb, return_choices=True)
-                job["wf_choices"] = choices
+                job["wf_choices"] = [
+                    (work_df.index[min(t, len(work_df) - 1)], int(b)) for t, b in choices
+                ]
             else:
                 sig = walkforward_donch(work_df, tw, tstep, *lb)
-            real_rets = sig * _rets(c)
+            # OUT-OF-SAMPLE ONLY — the training block is never scored, counted or plotted.
+            real_rets = (sig * _rets(c))[tw:]
             real_pf = profit_factor_np(real_rets)
-            step = _downsample(len(work_df))
-            job["curve_x"] = work_df.index[::step]
-
+            if not np.isfinite(real_pf):
+                raise ValueError(
+                    "No out-of-sample trades were produced — widen the walk-forward years "
+                    "or shorten the training window."
+                )
+            oos_x = work_df.index[tw:]
+            step = _downsample(len(oos_x))
+            job["curve_x"] = oos_x[::step]
         else:  # ma
             work_df = btc
             job["window_desc"] = f"full feed · {len(work_df):,} bars"
