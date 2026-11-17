@@ -27,7 +27,7 @@ permuted_pfs = []
 
 print("In-Sample MCPT")
 for perm_i in tqdm(range(1, n_permutations)):
-    train_perm = get_permutation(train_df)
+    train_perm = get_permutation(train_df, seed=69 + perm_i)
     _, best_perm_pf = optimize_donchian(train_perm)
     if best_perm_pf >= best_real_pf:
         perm_better_count += 1
