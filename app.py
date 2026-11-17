@@ -62,7 +62,7 @@ C = dict(
 )
 PLOTLY_CFG = {"displayModeBar": False, "responsive": True}
 
-CSS = """
+CSS = r"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
@@ -87,13 +87,13 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
   -webkit-font-feature-settings:'liga' !important;
   -webkit-font-smoothing:antialiased;
 }
-/* sidebar collapse / expand: draw our own chevron so no raw ligature can show */
+/* sidebar collapse / expand: literal glyphs, never CSS unicode escapes */
 [data-testid="stSidebarCollapseButton"] button span,
 [data-testid="stSidebarCollapsedControl"] button span,
 [data-testid="stExpandSidebarButton"] span{font-size:0 !important;line-height:0 !important;}
-[data-testid="stSidebarCollapseButton"] button::after{content:"20392039";}
-[data-testid="stSidebarCollapsedControl"] button::after{content:"203A203A";}
-[data-testid="stExpandSidebarButton"]::after{content:"203A203A";}
+[data-testid="stSidebarCollapseButton"] button::after{content:"‹‹";}
+[data-testid="stSidebarCollapsedControl"] button::after{content:"››";}
+[data-testid="stExpandSidebarButton"]::after{content:"››";}
 [data-testid="stSidebarCollapseButton"] button::after,
 [data-testid="stSidebarCollapsedControl"] button::after,
 [data-testid="stExpandSidebarButton"]::after{
@@ -103,6 +103,12 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 [data-testid="stSidebarCollapseButton"] button:hover::after,
 [data-testid="stSidebarCollapsedControl"] button:hover::after,
 [data-testid="stExpandSidebarButton"]:hover::after{color:var(--btc2);}
+
+/* no heading anchors: the URL never picks up a #fragment, everything stays in-app */
+[data-testid="stHeaderActionElements"],
+.stMarkdown a.anchor-link,
+.stMarkdown h1 > a, .stMarkdown h2 > a, .stMarkdown h3 > a,
+.stMarkdown h4 > a, .stMarkdown h5 > a, .stMarkdown h6 > a{display:none !important;}
 
 [data-testid="stAppViewContainer"]{
   background:
@@ -198,8 +204,8 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 
 .panel{background:linear-gradient(150deg,#0d1424,#0a0f1a);border:1px solid var(--line);
   border-radius:16px;padding:1.05rem 1.2rem;margin:.5rem 0;}
-.panel h3{margin:.1rem 0 .45rem;font-size:1.1rem;color:var(--text);}
-.panel h4{margin:.7rem 0 .3rem;font-size:.95rem;color:var(--btc2);}
+.panel h3,.panel .h3{margin:.1rem 0 .45rem;font-size:1.1rem;font-weight:600;color:var(--text);}
+.panel h4,.panel .h4{margin:.7rem 0 .3rem;font-size:.95rem;font-weight:600;color:var(--btc2);}
 .panel p{color:var(--muted);font-size:.87rem;line-height:1.65;margin:.2rem 0;}
 .panel ul,.panel ol{color:var(--muted);font-size:.85rem;line-height:1.7;margin:.25rem 0 .2rem;padding-left:1.15rem;}
 .panel li b{color:var(--text);font-weight:600;}
@@ -213,8 +219,8 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 .pd{border-radius:14px;padding:.9rem 1rem;border:1px solid;}
 .pd.keep{border-color:rgba(44,229,167,.35);background:rgba(44,229,167,.06);}
 .pd.kill{border-color:rgba(255,77,94,.35);background:rgba(255,77,94,.06);}
-.pd h4{margin:0 0 .45rem;font-size:.92rem;}
-.pd.keep h4{color:var(--green);} .pd.kill h4{color:var(--red);}
+.pd h4,.pd .h4{margin:0 0 .45rem;font-size:.92rem;font-weight:600;}
+.pd.keep h4,.pd.keep .h4{color:var(--green);} .pd.kill h4,.pd.kill .h4{color:var(--red);}
 .pd ul{margin:0;padding-left:1.05rem;color:var(--muted);font-size:.82rem;line-height:1.6;}
 .pd li b{color:var(--text);font-weight:600;}
 .callout{border-left:3px solid var(--btc);background:rgba(247,147,26,.07);
@@ -232,7 +238,7 @@ code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
 .strat-block .ask{font-size:.8rem;color:var(--btc2);border-top:1px dashed rgba(247,147,26,.25);padding-top:.55rem;margin-top:.6rem;}
 .note-sec{border:1px solid var(--line);border-radius:16px;padding:1rem 1.15rem;margin:.7rem 0;
   background:linear-gradient(155deg,#0d1424,#0a0f1a);}
-.note-sec h4{margin:.1rem 0 .5rem;font-size:1rem;color:var(--text);}
+.note-sec h4,.note-sec .h4{margin:.1rem 0 .5rem;font-size:1rem;font-weight:600;color:var(--text);}
 .note-sec p{color:var(--muted);font-size:.86rem;line-height:1.7;margin:.35rem 0;}
 .note-sec p b{color:var(--btc2);font-weight:600;}
 .note-sec .fig{font-family:'IBM Plex Mono',monospace;color:var(--text);}
@@ -292,6 +298,60 @@ div[data-baseweb="tab-border"]{background:var(--line);}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------- notices
+def notify(text, hints=None, technical=None):
+    """Queue one dismissible popup. Nothing is rendered inline; details go to the log."""
+    sig = hash((text, tuple(hints or ())))
+    seen = st.session_state.setdefault("_notices_seen", set())
+    if sig in seen:
+        return
+    seen.add(sig)
+    if technical:
+        print("[MCPT]", technical)          # server-side only, never shown to the user
+    st.session_state["_popup"] = {"text": text, "hints": list(hints or ())}
+
+
+def _popup_body():
+    p = st.session_state.get("_popup") or {}
+    st.markdown(f'<div class="panel"><div class="h3">{p.get("text", "")}</div></div>',
+                unsafe_allow_html=True)
+    hints = p.get("hints") or []
+    if hints:
+        st.markdown(
+            '<div class="panel"><div class="h4">What to try</div><ul>'
+            + "".join(f"<li>{h}</li>" for h in hints) + "</ul></div>",
+            unsafe_allow_html=True)
+    if st.button("Dismiss", type="primary", use_container_width=True, key="popup_dismiss"):
+        st.session_state.pop("_popup", None)
+        st.rerun()
+
+
+_popup_dialog = st.dialog("Notice")(_popup_body) if hasattr(st, "dialog") else None
+
+
+def flush_popup():
+    """Open the queued popup once, at the end of the run."""
+    p = st.session_state.get("_popup")
+    if not p:
+        return
+    if _popup_dialog is not None:
+        try:
+            _popup_dialog()
+            return
+        except Exception:
+            pass
+    try:
+        st.toast(p["text"], icon="⚠️")
+    except Exception:
+        pass
+    st.session_state.pop("_popup", None)
+
+
+def reset_notices():
+    st.session_state.pop("_notices_seen", None)
+    st.session_state.pop("_popup", None)
 
 
 # ---------------------------------------------------------------- helpers
@@ -748,6 +808,7 @@ def reference_zip():
 
 
 def use_reference_pair():
+    reset_notices()
     st.session_state["w_source"] = REF_SOURCE
 
 
@@ -811,9 +872,12 @@ def start_run():
     active = st.session_state.get("active")
     if active and active.get("status") == "running":
         return
+    reset_notices()
     btc = st.session_state.get("btc_df")
     if btc is None or len(btc) < 4:
-        st.session_state["run_error"] = "Not enough bars at this timeframe — pick a finer bar size."
+        notify("There are not enough bars at this bar size to run a test.",
+               ["Choose a finer bar size — Hourly or Daily.",
+                "Load a file covering a longer period."])
         return
     if active and "stop" in active:
         active["stop"].set()
@@ -824,7 +888,9 @@ def start_run():
         try:
             wf_plan(n_win, cfg["wf_train_bars"], cfg["wf_step_bars"])
         except ValueError as ex:
-            st.session_state["run_error"] = str(ex)
+            notify(str(ex), ["Widen the walk-forward years.",
+                             "Shorten the training window or the re-optimization step."],
+                   technical=str(ex))
             return
     job = dict(
         id=uuid.uuid4().hex[:10], status="running", phase="Initializing…",
@@ -839,7 +905,6 @@ def start_run():
     th = threading.Thread(target=run_mcpt, args=(job, btc.copy(), cfg), daemon=True)
     job["thread"] = th
     st.session_state["active"] = job
-    st.session_state["run_error"] = None
     th.start()
 
 
@@ -853,6 +918,7 @@ def clear_active():
     a = st.session_state.get("active")
     if a and a.get("status") == "running":
         return
+    reset_notices()
     st.session_state["active"] = None
 
 
@@ -909,7 +975,8 @@ def compute_details(btc, cfg):
         else:
             win = btc
         if len(win) < 4:
-            return {"error": f"Only {len(win)} bar(s) here — widen the years or pick a finer bar size."}
+            return {"error": f"Only {len(win)} bar(s) in that range.",
+                    "hints": ["Widen the year range.", "Pick a finer bar size."]}
 
         lb = clamp_grid(cfg["lb_min"], cfg["lb_max"], cfg["lb_step"], len(win))
         c = win["close"].to_numpy()
@@ -935,7 +1002,8 @@ def compute_details(btc, cfg):
             try:
                 tw, tstep, n_oos = wf_plan(len(win), cfg["wf_train_bars"], cfg["wf_step_bars"])
             except ValueError as ex:
-                return {"error": str(ex)}
+                return {"error": str(ex),
+                        "hints": ["Widen the years.", "Shorten the training window or step."]}
             lb = clamp_grid(lb[0], lb[1], lb[2], tw)
             extra["grid"] = lb
             if cfg["turbo"]:
@@ -1004,7 +1072,9 @@ def compute_details(btc, cfg):
             extra=extra,
         )
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e),
+                "hints": ["Try a finer bar size or a wider date range.",
+                          "For the tree, raise min_samples_leaf or cap max_depth."]}
 
 
 # ---------------------------------------------------------------- anatomy
@@ -1013,6 +1083,8 @@ def anatomy(btc, eth, draw, nlags, tf):
     seed = ANATOMY_SEED + int(draw)
     d = tf_defaults(tf)
     sl = btc.iloc[-min(len(btc), int(d["anat"])):]
+    if len(sl) < 4:
+        raise ValueError("Not enough bars at this bar size for the anatomy view.")
     nlags = int(max(2, min(int(nlags), max(2, len(sl) // 3))))
     perm = get_permutation(sl, seed=seed)
     rr = np.log(sl["close"]).diff().dropna().to_numpy()
@@ -1104,15 +1176,16 @@ def notes_stats(btc, eth, tf):
 
     if out["btc"] is not None:
         sl = btc.iloc[-min(len(btc), int(tf_defaults(tf)["anat"])):]
-        pm = get_permutation(sl, seed=ANATOMY_SEED)
-        rr = np.log(sl["close"]).diff().dropna().to_numpy()
-        pr = np.log(pm["close"]).diff().dropna().to_numpy()
-        nlags = int(max(2, min(48, len(rr) // 3)))
-        aar, n = acf(np.abs(rr), nlags)
-        aap, _ = acf(np.abs(pr), nlags)
-        out["acf"] = dict(lags=np.arange(nlags + 1), real=aar, perm=aap, n=n)
-        out["perm"] = dict(acf1=float(pd.Series(pr).autocorr(1)),
-                           acf1_abs=float(pd.Series(np.abs(pr)).autocorr(1)))
+        if len(sl) >= 4:
+            pm = get_permutation(sl, seed=ANATOMY_SEED)
+            rr = np.log(sl["close"]).diff().dropna().to_numpy()
+            pr = np.log(pm["close"]).diff().dropna().to_numpy()
+            nlags = int(max(2, min(48, len(rr) // 3)))
+            aar, n = acf(np.abs(rr), nlags)
+            aap, _ = acf(np.abs(pr), nlags)
+            out["acf"] = dict(lags=np.arange(nlags + 1), real=aar, perm=aap, n=n)
+            out["perm"] = dict(acf1=float(pd.Series(pr).autocorr(1)),
+                               acf1_abs=float(pd.Series(np.abs(pr)).autocorr(1)))
         eq = np.cumsum(np.diff(np.log(btc["close"].to_numpy(dtype=float))))
         dd = eq - np.maximum.accumulate(eq)
         step = max(1, len(dd) // 2000)
@@ -1293,7 +1366,7 @@ def onboarding():
     st.markdown(
         """
 <div class="panel">
-  <h3>Is your optimized edge real — or the best-looking lie in 157 tries?</h3>
+  <div class="h3">Is your optimized edge real — or the best-looking lie in 157 tries?</div>
   <p>Optimization <b style="color:var(--btc2)">always</b> induces data-mining bias. This terminal rebuilds the market as
   structureless noise — same distribution, zero memory — re-runs your <i>entire</i> pipeline on each shuffled universe,
   and asks how often noise alone beats your real result. </p>
@@ -1311,7 +1384,7 @@ def onboarding():
 def live_fragment():
     job = st.session_state.get("active")
     if job is None or job.get("status") != "running":
-        if job is not None and not job.get("_finalized"):
+        if job is not None and job.get("status") == "done" and not job.get("_finalized"):
             finalize(job)
         st.rerun(scope="app")
         return
@@ -1341,7 +1414,7 @@ def live_fragment():
         st.info(f"{job.get('phase','Working')} — the real-data baseline runs first, then permutations stream in.")
 
     if job["status"] != "running":
-        if not job.get("_finalized"):
+        if job.get("status") == "done" and not job.get("_finalized"):
             finalize(job)
         st.rerun(scope="app")
 
@@ -1396,12 +1469,14 @@ with st.sidebar:
     notice = None
     try:
         raw1, raw2, src_label, notice = resolve_data(source, up1, up2)
-        data_err = None
     except Exception as e:
         raw1, raw2 = synth_pair()
-        src_label, data_err, notice = "DEMO FEED", str(e), None
-    if data_err:
-        st.error(data_err)
+        src_label, notice = "DEMO FEED", None
+        notify("That file could not be read, so the reference feed is in use.",
+               ["Check the columns: timestamp, open, high, low, close.",
+                "Prices must be positive numbers with no empty rows.",
+                "Keep the file under max 200 MB."],
+               technical=f"{type(e).__name__}: {e}")
     if notice:
         st.caption(notice)
 
@@ -1410,6 +1485,7 @@ with st.sidebar:
                           format_func=lambda k: TF_LABEL[k], key="w_tf")
     if st.session_state.get("tf_prev") != tf:
         st.session_state["tf_prev"] = tf
+        reset_notices()
         for k in ("w_lbmin", "w_lbmax", "w_lbstep", "w_wf_train", "w_wf_step",
                   "w_maf", "w_mas", "w_lags"):
             st.session_state.pop(k, None)
@@ -1454,7 +1530,7 @@ with st.sidebar:
         tr = num_slider(f"Training window ({unit} bars)", 2, wf_train_max(n_win), dflt["train"], "w_wf_train")
         stp = num_slider(f"Re-optimize every ({unit} bars)", 1, wf_step_max(n_win), dflt["step"], "w_wf_step")
         if n_win < 4:
-            st.warning(f"Only {n_win} {unit} bars in that range — widen the years or pick a finer bar size.")
+            st.caption(f"⚠ {n_win} {unit} bars in that range — widen the years or pick a finer bar size.")
         else:
             tw, ts, no = wf_plan(n_win, tr, stp)
             g = clamp_grid(lb_min, lb_max, lb_step, tw)
@@ -1491,8 +1567,6 @@ with st.sidebar:
     st.button("Clear results", on_click=clear_active, disabled=running, use_container_width=True)
     if running:
         st.caption(f"● running — {active['done']:,} / {active['config']['n_perms']:,}")
-    if st.session_state.get("run_error"):
-        st.error(st.session_state["run_error"])
 
 # ---------------------------------------------------------------- header
 cfg_now = collect_cfg()
@@ -1528,10 +1602,12 @@ with tab_lab:
         onboarding()
         history_block()
     elif active.get("status") == "error":
-        sec("E", "Run failed")
-        st.error(active.get("error", "Unknown error").strip().splitlines()[-1])
-        with st.expander("Traceback"):
-            st.code(active.get("error", ""), language="text")
+        notify("The test could not complete on this sample.",
+               ["Pick a finer bar size, or widen the date range.",
+                "Lower the lookback grid, or allow shorts for the MA rule.",
+                "For the tree, raise min_samples_leaf or cap max_depth."],
+               technical=active.get("error"))
+        onboarding()
         history_block()
     else:
         sec("R", f"Results · {active['label']}")
@@ -1559,7 +1635,8 @@ with tab_strat:
 
     det = compute_details(btc_df, cfg_now)
     if det.get("error"):
-        st.warning(det["error"])
+        notify(det["error"], det.get("hints"), technical=det["error"])
+        st.caption("Adjust the bar size or date range in the sidebar to populate this panel.")
     else:
         s = det["stats"]
         st.markdown(cards_html([
@@ -1602,36 +1679,46 @@ with tab_anat:
     cb.button("🔀 Draw a new permutation", on_click=new_permutation_draw)
     nlags = num_slider(f"ACF lags ({unit_now} bars)", 2, max(3, min(336, len(btc_df) // 3)),
                        tf_defaults(tf_now)["lags"], "w_lags")
-    an = anatomy(btc_df, eth_df, int(st.session_state.get("anat_draw", 0)), nlags, tf_now)
-    st.caption(f"{an['bars']:,} {unit_now} bars · {an['span']} · fixed seeds.")
+    try:
+        an = anatomy(btc_df, eth_df, int(st.session_state.get("anat_draw", 0)), nlags, tf_now)
+    except Exception as ex:
+        an = None
+        notify("The anatomy view needs more bars at this bar size.",
+               ["Pick Hourly or Daily.", "Load a longer date range."],
+               technical=f"{type(ex).__name__}: {ex}")
 
-    col1, col2 = st.columns([1.5, 1])
-    with col1:
-        show_fig(rebased_fig(an["x"], an["lcr"], an["lcp"]), key="an_price")
-        st.caption("Same bars, same total return — different path.")
-    with col2:
-        st.markdown('<div class="panel"><h3>Distribution preserved</h3>'
-                    '<p>Shuffling rearranges bars; it cannot change the histogram of returns.</p></div>',
-                    unsafe_allow_html=True)
-        st.table(an["moments"].style.format("{:.6f}"))
-
-    c1, c2 = st.columns(2)
-    with c1:
-        show_fig(acf_fig(an["lags"], an["ar"], an["ap"], an["n"], "ACF · returns", unit_now), key="an_acf_r")
-    with c2:
-        show_fig(acf_fig(an["lags"], an["aar"], an["aap"], an["n"], "ACF · |returns|", unit_now), key="an_acf_a")
-    st.caption("Dashed = ±1.96/√n white-noise bounds.")
-
-    if len(an["fxr"]) > 2:
-        show_fig(spec_fig(an["fxr"], an["pxr"], an["fxp"], an["pxp"]), key="an_spec")
-        st.caption("Slow low-frequency decay = long memory; permutation flattens it.")
-
-    if an["corr"]:
-        cr = an["corr"]
-        show_fig(corr_fig(cr["rb"], cr["re"], cr["pb"], cr["pe"], cr["rho_r"], cr["rho_p"]), key="an_corr")
-        st.caption("One shared shuffle keeps contemporaneous correlation alive.")
+    if an is None:
+        st.caption("Adjust the bar size in the sidebar to populate this panel.")
     else:
-        st.info("Load Currency 2 to see the joint-permutation correlation demo.")
+        st.caption(f"{an['bars']:,} {unit_now} bars · {an['span']} · fixed seeds.")
+
+        col1, col2 = st.columns([1.5, 1])
+        with col1:
+            show_fig(rebased_fig(an["x"], an["lcr"], an["lcp"]), key="an_price")
+            st.caption("Same bars, same total return — different path.")
+        with col2:
+            st.markdown('<div class="panel"><div class="h3">Distribution preserved</div>'
+                        '<p>Shuffling rearranges bars; it cannot change the histogram of returns.</p></div>',
+                        unsafe_allow_html=True)
+            st.table(an["moments"].style.format("{:.6f}"))
+
+        c1, c2 = st.columns(2)
+        with c1:
+            show_fig(acf_fig(an["lags"], an["ar"], an["ap"], an["n"], "ACF · returns", unit_now), key="an_acf_r")
+        with c2:
+            show_fig(acf_fig(an["lags"], an["aar"], an["aap"], an["n"], "ACF · |returns|", unit_now), key="an_acf_a")
+        st.caption("Dashed = ±1.96/√n white-noise bounds.")
+
+        if len(an["fxr"]) > 2:
+            show_fig(spec_fig(an["fxr"], an["pxr"], an["fxp"], an["pxp"]), key="an_spec")
+            st.caption("Slow low-frequency decay = long memory; permutation flattens it.")
+
+        if an["corr"]:
+            cr = an["corr"]
+            show_fig(corr_fig(cr["rb"], cr["re"], cr["pb"], cr["pe"], cr["rho_r"], cr["rho_p"]), key="an_corr")
+            st.caption("One shared shuffle keeps contemporaneous correlation alive.")
+        else:
+            st.info("Load Currency 2 to see the joint-permutation correlation demo.")
 
 # ---------------------------------------------------------------- MARKET NOTES
 with tab_notes:
@@ -1648,29 +1735,34 @@ with tab_notes:
         'Descriptive statistics — not a backtest, not investment advice.</div>',
         unsafe_allow_html=True)
 
-    NS = notes_stats(btc_df, eth_df, tf_now)
-    b, e, jt, pm = NS["btc"], NS["eth"], NS["joint"], NS["perm"]
+    try:
+        NS = notes_stats(btc_df, eth_df, tf_now)
+    except Exception as ex:
+        NS = None
+        notify("The market diagnostics need more bars at this bar size.",
+               ["Pick Hourly or Daily.", "Load a longer date range."],
+               technical=f"{type(ex).__name__}: {ex}")
 
-    if b is None:
-        st.warning("Too few bars at this timeframe for these diagnostics — pick a finer bar size or a wider feed.")
+    if NS is None or NS["btc"] is None:
+        st.caption("Adjust the bar size in the sidebar to populate this panel.")
     else:
+        b, e, jt, pm = NS["btc"], NS["eth"], NS["joint"], NS["perm"]
         st.table(notes_table(NS))
         st.caption(f"Currency 1 · {b['start']:%Y-%m-%d} → {b['end']:%Y-%m-%d} · "
                    f"{b['bars']:,} {unit_now} bars" + (" · Currency 2 aligned on the same timestamps." if e else ""))
 
         cn1, cn2 = st.columns([1.4, 1])
         with cn1:
-            if e is not None:
-                common = btc_df.index.intersection(eth_df.index)
+            common = btc_df.index.intersection(eth_df.index) if eth_df is not None else []
+            if e is not None and len(common) > 2:
                 lb_ = np.log(btc_df.loc[common, "close"].to_numpy()); lb_ -= lb_[0]
                 le_ = np.log(eth_df.loc[common, "close"].to_numpy()); le_ -= le_[0]
                 stp = max(1, len(common) // 2000)
                 show_fig(rebased_fig(common[::stp], lb_[::stp], le_[::stp],
                                      "BTC vs ETH · log price", ("BTC", "ETH")), key="n_pair")
                 st.caption("Both series rebased to zero at the first shared bar.")
-            else:
-                show_fig(rebased_fig(NS["dd"]["x"], NS["dd"]["y"], NS["dd"]["y"] * 0,
-                                     "Currency 1 · drawdown path"), key="n_dd_solo")
+            elif NS["dd"] is not None:
+                show_fig(dd_fig(NS["dd"]["x"], NS["dd"]["y"]), key="n_dd_solo")
         with cn2:
             if NS["acf"] is not None:
                 show_fig(acf_fig(NS["acf"]["lags"], NS["acf"]["real"], NS["acf"]["perm"],
@@ -1685,10 +1777,13 @@ with tab_notes:
                   (f"below 1 at q={b['vrq']} ({b['vr']:.2f}), i.e. partial mean reversion at that horizon"
                    if np.isfinite(b["vr"]) and b["vr"] < 0.95 else
                    f"close to 1 at q={b['vrq']} ({fmt_n(b['vr'],'{:.2f}')}), i.e. near-random-walk scaling"))
+        perm_txt = (f"After a single permutation of the same bars, those two figures become "
+                    f"<b>{fmt_n(pm['acf1'], '{:+.4f}')}</b> and <b>{fmt_n(pm['acf1_abs'], '{:+.4f}')}</b> respectively."
+                    if pm else "A permutation comparison needs a few more bars at this size.")
 
         st.markdown(f"""
 <div class="note-sec">
-  <h4>1 · The return distribution is decisively non-Gaussian</h4>
+  <div class="h4">1 · The return distribution is decisively non-Gaussian</div>
   <p>Across <span class="fig">{b['bars']:,}</span> {unit_now} bars, currency 1 shows an annualised volatility of
   <b>{b['ann_vol']:.1%}</b>, skew of <b>{b['skew']:+.3f}</b> and excess kurtosis of <b>{b['kurt']:.2f}</b>.
   Moves beyond three standard deviations account for <b>{b['p3']:.2%}</b> of bars against a Gaussian expectation of
@@ -1700,11 +1795,10 @@ with tab_notes:
 </div>
 
 <div class="note-sec">
-  <h4>2 · Direction is close to unpredictable; risk is not</h4>
+  <div class="h4">2 · Direction is close to unpredictable; risk is not</div>
   <p>First-order autocorrelation of returns is <b>{b['acf1']:+.4f}</b>, while autocorrelation of absolute returns is
   <b>{b['acf1_abs']:+.4f}</b> and remains <b>{fmt_n(b['acfL_abs'], '{:+.4f}')}</b> at lag {b['lag']}.
-  After a single permutation of the same bars, those two figures become <b>{fmt_n(pm['acf1'], '{:+.4f}')}</b> and
-  <b>{fmt_n(pm['acf1_abs'], '{:+.4f}')}</b> respectively.</p>
+  {perm_txt}</p>
   <p>This asymmetry is the central empirical fact behind the test. Shuffling cannot change the histogram, so a
   strategy that only harvests the shape of the distribution keeps working on noise. A strategy that depends on
   <i>order</i> — volatility clustering, persistence, regime length — is being judged against a world where that
@@ -1712,7 +1806,7 @@ with tab_notes:
 </div>
 
 <div class="note-sec">
-  <h4>3 · Horizon changes the answer</h4>
+  <div class="h4">3 · Horizon changes the answer</div>
   <p>The variance ratio is {vr_txt}. Aggregation matters: the same feed read at a different bar size changes both
   the tail statistics and the dependence structure, because averaging bars pulls the distribution toward normality
   and re-mixes the clustering. This is why the terminal counts every window in bars of the selected size rather
@@ -1720,7 +1814,7 @@ with tab_notes:
 </div>
 
 <div class="note-sec">
-  <h4>4 · Path risk dominates the average</h4>
+  <div class="h4">4 · Path risk dominates the average</div>
   <p>The cumulative log return is <b>{b['total']:+.3f}</b>, yet the deepest peak-to-trough drawdown on the way is
   <b>{b['mdd_pct']:.1%}</b>. The largest 1% of bars carry <b>{b['top1']:.1%}</b> of all absolute movement.</p>
   <p>Two implications for evaluation. First, an equity curve that looks acceptable in summary can contain a
@@ -1733,7 +1827,7 @@ with tab_notes:
         if jt is not None:
             st.markdown(f"""
 <div class="note-sec">
-  <h4>5 · Two tickers, largely one risk factor</h4>
+  <div class="h4">5 · Two tickers, largely one risk factor</div>
   <p>On <span class="fig">{jt['n']:,}</span> aligned bars, the correlation between currency 1 and currency 2 returns is
   <b>{jt['rho']:.3f}</b>, with a beta of currency 2 on currency 1 of <b>{jt['beta']:.3f}</b>. The correlation of
   absolute returns is <b>{jt['rho_abs']:.3f}</b>, and a rolling {jt['win']}-bar correlation ranges from
@@ -1749,7 +1843,7 @@ with tab_notes:
 
         st.markdown(f"""
 <div class="note-sec">
-  <h4>6 · What this implies for each pipeline</h4>
+  <div class="h4">6 · What this implies for each pipeline</div>
   <ul>
     <li><b>Donchian Breakout.</b> With dependence this weak at lag 1 and tails this heavy, the lookback sweep has
     ample room to fit noise. Read the amber curve against the noise envelope, never on its own.</li>
@@ -1764,7 +1858,7 @@ with tab_notes:
 </div>
 
 <div class="note-sec">
-  <h4>7 · Reproduction and caveats</h4>
+  <div class="h4">7 · Reproduction and caveats</div>
   <p>The reference pair is generated with seed {REF_SEED} and exported at full float precision, so downloading the CSVs
   and uploading them again reproduces the default run exactly. Permutation seeds are fixed at {BASE_SEED} for tests and
   {ANATOMY_SEED} for the anatomy draw, so every figure here is repeatable.</p>
@@ -1785,7 +1879,7 @@ with tab_method:
     st.markdown(
         """
 <div class="panel">
-<h3>Why permutation testing?</h3>
+<div class="h3">Why permutation testing?</div>
 <p>Using the best version of a strategy <b style="color:var(--text)">requires optimization</b> — and optimization
 <b style="color:var(--btc2)">always induces data-mining bias</b>: pick the best of various lookbacks and the winner's profit factor is inflated by selection alone.
 The question is whether your pipeline's result is distinguishable from what the <i>same pipeline</i> achieves on data with no pattern at all.</p>
@@ -1806,14 +1900,14 @@ minimum bar count. Permutation is applied to those same bars, so the null always
 stop on the current calendar year — both ends are included, so selecting 2016 → 2026 keeps every bar in 2026. Nothing is hard-coded:
 load a newer file and the range extends itself. Both pipelines default to the full range.</div>
 <div class="pd-grid">
-  <div class="pd keep"><h4>✓ PRESERVED by bar permutation</h4><ul>
+  <div class="pd keep"><div class="h4">✓ PRESERVED by bar permutation</div><ul>
     <li><b>Marginal distribution</b> of returns — mean, std, skew, kurtosis</li>
     <li><b>Intrabar geometry</b> — high/low/close relative to open, shuffled jointly</li>
     <li><b>Gap distribution</b> — close-to-open jumps, shuffled separately</li>
     <li><b>Cross-market correlation</b> — when currencies are permuted jointly</li>
     <li><b>Real history before start_index</b> — walk-forward permutes only the OOS region</li>
   </ul></div>
-  <div class="pd kill"><h4>✕ DESTROYED by bar permutation</h4><ul>
+  <div class="pd kill"><div class="h4">✕ DESTROYED by bar permutation</div><ul>
     <li><b>Volatility clustering</b> — serial correlation of absolute returns</li>
     <li><b>Long memory</b> — slow decay of dependency over longer lags</li>
     <li><b>Self-similarity</b> and fractal scaling across horizons</li>
@@ -1828,7 +1922,7 @@ load a newer file and the range extends itself. Both pipelines default to the fu
     st.markdown(
         """
 <div class="panel">
-<h3>File requirements</h3>
+<div class="h3">File requirements</div>
 <ul>
   <li><b>Format.</b> <code>.csv</code>, <code>.pq</code> or <code>.parquet</code>. Upload limit is <b>max 200 MB per file</b>
       (Streamlit's cap; raise it with <code>[server] maxUploadSize</code> in <code>.streamlit/config.toml</code> if you self-host).</li>
@@ -1840,7 +1934,7 @@ load a newer file and the range extends itself. Both pipelines default to the fu
   <li><b>Second currency.</b> Optional, and only used for the joint-permutation correlation demo and the Market Notes
       co-movement section. It is aligned to Currency 1 on shared timestamps.</li>
 </ul>
-<h4>Example — first three rows</h4>
+<div class="h4">Example — first three rows</div>
 </div>
 """, unsafe_allow_html=True)
     st.code("timestamp,open,high,low,close\n"
@@ -1870,7 +1964,7 @@ default run exactly, which makes them ideal for learning the workflow, checking 
     st.markdown(
         """
 <div class="panel">
-<h3>Loading real exchange history</h3>
+<div class="h3">Loading real exchange history</div>
 <p>For conclusions about the actual market, use real data. Public, no-cost sources that publish BTC and ETH OHLC:</p>
 <ul>
   <li><b>Binance public data</b> — <code>data.binance.vision</code>, spot/futures klines aggregated into daily or monthly
@@ -1926,13 +2020,13 @@ convert and rename, then keep the four price columns.</p>
     <li>Sweep the lookback grid and keep the <b>highest profit factor</b> on that same data. That selection step is the bias MCPT prices.</li>
   </ol>
   <div class="pd-grid">
-    <div class="pd keep"><h4>Strengths</h4><ul>
+    <div class="pd keep"><div class="h4">Strengths</div><ul>
       <li>Captures fat-tailed trending regimes</li>
       <li>One transparent parameter</li>
       <li>Always in the market — cannot miss a violent breakout</li>
       <li>No look-ahead in the signal</li>
     </ul></div>
-    <div class="pd kill"><h4>Weaknesses</h4><ul>
+    <div class="pd kill"><div class="h4">Weaknesses</div><ul>
       <li><b>Maximum selection bias</b> — the best of the grid is an upper bound</li>
       <li>Spiky PF surface; the winner is often unstable</li>
       <li>Whipsaws in ranges; no stop or sizing</li>
@@ -1951,13 +2045,13 @@ convert and rename, then keep the four price columns.</p>
     <li>Permutation starts at <code>start_index = train_bars</code>; the <b>re-optimization runs inside every permutation</b>.</li>
   </ol>
   <div class="pd-grid">
-    <div class="pd keep"><h4>Strengths</h4><ul>
+    <div class="pd keep"><div class="h4">Strengths</div><ul>
       <li>Honest out-of-sample estimate</li>
       <li>Adapts as regimes change</li>
       <li>Tests the <b>procedure</b> you would deploy</li>
       <li>Selection bias reduced and still measured</li>
     </ul></div>
-    <div class="pd kill"><h4>Weaknesses</h4><ul>
+    <div class="pd kill"><div class="h4">Weaknesses</div><ul>
       <li>Bias reduced, not removed</li>
       <li>Parameter churn adds turnover</li>
       <li>One full sweep per step, per permutation</li>
@@ -1977,13 +2071,13 @@ convert and rename, then keep the four price columns.</p>
     <li>MCPT <b>retrains a fresh tree on every permuted universe</b>.</li>
   </ol>
   <div class="pd-grid">
-    <div class="pd keep"><h4>Strengths</h4><ul>
+    <div class="pd keep"><div class="h4">Strengths</div><ul>
       <li>Learns non-linear interactions</li>
       <li>Inspectable feature importances</li>
       <li>No distributional assumptions</li>
       <li>Depth/leaf caps are a direct overfitting dial</li>
     </ul></div>
-    <div class="pd kill"><h4>Weaknesses</h4><ul>
+    <div class="pd kill"><div class="h4">Weaknesses</div><ul>
       <li><b>Enormous overfit capacity</b></li>
       <li>Overlapping labels inflate apparent skill</li>
       <li>Label horizon ≠ scoring horizon (1 bar)</li>
@@ -2002,13 +2096,13 @@ convert and rename, then keep the four price columns.</p>
     <li>Turns only at crossovers, so turnover is low.</li>
   </ol>
   <div class="pd-grid">
-    <div class="pd keep"><h4>Strengths</h4><ul>
+    <div class="pd keep"><div class="h4">Strengths</div><ul>
       <li>Few degrees of freedom → little mining bias</li>
       <li>Low turnover, robust to costs</li>
       <li>Long/flat sidesteps borrow risk</li>
       <li>Easy to explain</li>
     </ul></div>
-    <div class="pd kill"><h4>Weaknesses</h4><ul>
+    <div class="pd kill"><div class="h4">Weaknesses</div><ul>
       <li>Lags every turn</li>
       <li>Whipsaws in chop; flat periods earn nothing</li>
       <li>Long/flat is partly a bet on positive drift</li>
@@ -2036,7 +2130,7 @@ convert and rename, then keep the four price columns.</p>
     st.markdown(
         """
 <div class="panel">
-<h3>Workflow</h3>
+<div class="h3">Workflow</div>
 <p><b style="color:var(--text)">1.</b> Load Currency 1. <b style="color:var(--text)">2.</b> Pick a bar size.
 <b style="color:var(--text)">3.</b> Pick a pipeline; windows auto-fit. <b style="color:var(--text)">4.</b> Set permutations and run.</p>
 <p><b style="color:var(--btc2)">PF histogram</b> — the amber line is your real result, the red tail everything that beat it.
@@ -2077,46 +2171,47 @@ MCPT prices the procedure you actually ran; if you tried several pipelines and o
             ],
         },
         index=[
-            "“The strategy never traded on this sample”",
-            "“Only N usable rows for the tree”",
-            "“Only N bar(s) at this timeframe”",
-            "“Only 0 bar(s) in that date range”",
-            "“needs columns open / high / low / close”",
-            "“needs at least 8 rows”",
+            "Strategy never traded",
+            "Too few usable rows for the tree",
+            "Too few bars at this timeframe",
+            "No bars in the selected years",
+            "Missing OHLC columns",
+            "File too short after cleaning",
             "Upload rejected",
             "Run feels slow",
             "Correlation panel is empty",
         ]))
+    st.caption("Any of these conditions raises a single dismissible popup — the page itself stays clean.")
 
     sec("F", "Frequently asked questions")
     st.markdown(
         """
 <div class="panel">
-<h4>Does a low p-value prove the strategy is profitable?</h4>
+<div class="h4">Does a low p-value prove the strategy is profitable?</div>
 <p>No. It says the pipeline's result is unlikely to be reproduced by the same pipeline on bars with no serial
 structure. Costs, capacity, slippage, funding and regime change are all outside the test.</p>
-<h4>Does a high p-value prove there is no edge?</h4>
+<div class="h4">Does a high p-value prove there is no edge?</div>
 <p>No. It says this procedure, on this sample, at this bar size, cannot distinguish itself from shuffled noise.
 A different horizon or a cost-aware variant may behave differently.</p>
-<h4>Why 1000 permutations?</h4>
+<div class="h4">Why 1000 permutations?</div>
 <p>Resolution. The smallest attainable p-value is 1/(N+1): 0.02 at 50, 0.005 at 200, ≈0.001 at 1000. Monte Carlo error
 on p shrinks roughly with 1/√N, so 1000 is the point where a 0.05 verdict becomes stable.</p>
-<h4>What do the year sliders include?</h4>
+<div class="h4">What do the year sliders include?</div>
 <p>Both ends. They run from the first year in your data to the current calendar year, and the default selection covers
 that whole span. Years past the end of your feed simply contain no bars — the sidebar states the feed's last year.</p>
-<h4>Why is walk-forward so much slower?</h4>
+<div class="h4">Why is walk-forward so much slower?</div>
 <p>It re-runs the full lookback sweep at every step, inside every permutation. Cost scales with
 steps × grid size × permutations. Turbo, a coarser grid step, or daily bars are the three effective levers.</p>
-<h4>Are the seeds really fixed?</h4>
+<div class="h4">Are the seeds really fixed?</div>
 <p>Yes — tests use seed 69, the anatomy draw uses 4242, and the reference pair uses 7. Identical inputs give identical
 outputs, which is what makes a reported result checkable.</p>
-<h4>Can I trust the reference CSVs as market data?</h4>
+<div class="h4">Can I trust the reference CSVs as market data?</div>
 <p>No. They are a seeded synthetic pair designed to behave like crypto, provided so the workflow can be exercised and
 reproduced offline. Use exchange history for any claim about the real market.</p>
-<h4>What exactly does the Turbo toggle change?</h4>
+<div class="h4">What exactly does the Turbo toggle change?</div>
 <p>Nothing mathematically. It replaces the pandas loops with suffix-extreme matrices and segment cumulative sums.
 Turn it off to run the literal reference implementation and confirm the numbers agree.</p>
-<h4>Why is my equity curve flat at the start?</h4>
+<div class="h4">Why is my equity curve flat at the start?</div>
 <p>It should not be for walk-forward: only out-of-sample bars are drawn. For the other pipelines the warm-up period is
 flat by design — the channel, the MAs and the tree features need history before the first position.</p>
 </div>
@@ -2185,7 +2280,7 @@ attach it, and the run can be reproduced exactly.</p>
                            file_name="permutation_tests_trading_strategies.zip",
                            mime="application/zip", key="dl_zip")
     else:
-        st.warning(f"{pick} not found on disk.")
+        st.caption("That file is not present in this deployment.")
     st.markdown(
         '<div class="callout"><b>Run it:</b> <code>pip install -r requirements.txt</code> → <code>streamlit run app.py</code>. '
         'The standalone scripts remain the classic hourly tqdm + matplotlib workflow.</div>',
@@ -2196,3 +2291,5 @@ st.markdown(
     'DISTRIBUTION SURVIVES THE SHUFFLE — DEPENDENCE DOES NOT</div>',
     unsafe_allow_html=True,
 )
+
+flush_popup()
