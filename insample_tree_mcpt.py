@@ -28,7 +28,7 @@ permuted_pfs = []
 
 print("In-Sample MCPT")
 for perm_i in tqdm(range(1, n_permutations)):
-    train_perm = get_permutation(train_df)
+    train_perm = get_permutation(train_df, seed=69 + perm_i)
     perm_nn = train_tree(train_perm)
     _, perm_pf = tree_strategy(train_perm, perm_nn)
     if perm_pf >= real_is_pf:
