@@ -2113,6 +2113,137 @@ convert and rename, then keep the four price columns.</p>
 </div>
 """, unsafe_allow_html=True)
 
+    sec("E", "Execution — what a permutation test does not price")
+    st.markdown(
+        """
+<div class="callout"><b>What the test does not price.</b> A permutation test prices <b>data-mining bias</b>: how often noise beats your pipeline. It does not tell you whether the edge survives <b>execution</b>. Every figure here is gross, close-to-close, and assumes a fill at the signal bar's close. The blocks below name what stands between that and a real fill; the table after them shows how each one bears on the p-value.</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">1 · Transaction cost analysis (TCA)</span><span class="tagline">PRE-TRADE · INTRA-TRADE · POST-TRADE</span></div>
+  <ol>
+    <li><b>Implementation shortfall</b> — the paper result at the <b>decision price</b> minus the result you actually realise once the order is filled. In a bar backtest the decision price is the signal bar's close.</li>
+    <li><b>Explicit costs</b> — commissions, exchange and clearing fees, taxes. <b>Implicit costs</b> — the spread, the delay between signal and order, market impact, and the <b>opportunity cost</b> of orders that never fill.</li>
+    <li><b>Benchmarks</b> — the <b>arrival price</b> (the mid when the order reaches the market), <b>VWAP / TWAP</b> over the execution window, or the <b>close</b>. Pick the one that matches the decision being judged.</li>
+    <li><b>Three stages</b> — <b>pre-trade</b> estimates cost before sending, <b>intra-trade</b> adapts the pace to live conditions, <b>post-trade</b> compares fills with the benchmark and feeds the estimate back.</li>
+  </ol>
+  <div class="ask">Every trade pays twice, in and out. Compare the cost of a round trip with the average gain per trade before trusting a profit factor.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">2 · Information leakage</span><span class="tagline">INTENT · FOOTPRINT · CROWDED LEVELS</span></div>
+  <ol>
+    <li><b>Leakage</b> is any way your intent becomes visible before you finish trading: repeated child-order sizes, regular timing, a resting order at an obvious level, or a venue that exposes your flow.</li>
+    <li>Others who infer it trade ahead of you or step away, so price drifts against you between arrival and fill. The cost shows up as <b>shortfall</b>, not as a fee.</li>
+    <li>Breakouts are especially exposed: the trendline is a public level, stops and entries cluster just beyond it, and many participants are watching the same trigger.</li>
+    <li><b>Controls</b> — randomise slice size and timing, cap <b>participation</b>, use passive or midpoint orders when urgency allows, and avoid leaving an identical footprint trade after trade.</li>
+  </ol>
+  <div class="ask">Leakage feeds adverse selection: the more visible your intent, the more counterparties can choose when to trade against you.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">3 · Market impact</span><span class="tagline">TEMPORARY · PERMANENT</span></div>
+  <ol>
+    <li><b>Market impact</b> is how far your own trading moves the price against you. It grows with size, and it is absent from any backtest that fills at the close.</li>
+    <li>Rule of thumb: impact grows with the <b>square root</b> of order size relative to volume and scales with volatility — <code>impact ≈ Y · σ · √(Q / ADV)</code>, where <code>Y</code> is a market-specific constant of order one. Calibrate it on your own fills; treat it as a shape, not a quote.</li>
+    <li>It splits into a part that fades and a part that stays.</li>
+    <li>Breakouts fire when σ is high and the book is thin, so impact is at its worst exactly when the signal appears.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><div class="h4">Temporary impact — reverts</div><ul>
+      <li>The price concession paid for consuming liquidity <b>now</b></li>
+      <li>Rises with the <b>speed</b> of trading (participation rate)</li>
+      <li>Fades once you stop, as the book refills</li>
+      <li>Lowered by trading slower, at the price of more delay and leakage</li>
+    </ul></div>
+    <div class="pd kill"><div class="h4">Permanent impact — stays</div><ul>
+      <li>A new price level that reflects the <b>information</b> your order revealed</li>
+      <li>Rises with the <b>size</b> traded; largely independent of how you slice it</li>
+      <li>Does not revert; it becomes part of the next fair price</li>
+      <li>Avoided only by not revealing the information in the first place</li>
+    </ul></div>
+  </div>
+  <div class="ask">Temporary impact is a cost of urgency; permanent impact is a cost of size and information.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">4 · ADV — average daily volume</span><span class="tagline">PARTICIPATION = ORDER SIZE ÷ ADV</span></div>
+  <ol>
+    <li><b>ADV</b> is the mean traded volume per day over a trailing window, commonly 20 to 30 sessions, in shares, contracts or coins.</li>
+    <li><b>Participation rate</b> is order size ÷ ADV for a whole-day view, or order size ÷ interval volume for intraday. It is the input to every impact estimate above.</li>
+    <li><b>Uses</b> — a <b>capacity cap</b> (the largest size that still clears costs), a <b>liquidity screen</b> for which markets to trade, and the denominator in the √(Q / ADV) rule.</li>
+    <li>None of the four pipelines reads volume, and the loader ignores that column, so this app cannot size participation for you. Take ADV from your own market data and apply it to the strategy's real order size.</li>
+  </ol>
+  <div class="ask">ADV is a trailing average. On a liquidity event it overstates what the market can absorb that day.</div>
+</div>
+""", unsafe_allow_html=True)
+
+    sec("X", "Market structure — order book, auctions, sessions, liquidity events")
+    st.markdown(
+        """
+<div class="strat-block">
+  <div class="hd"><span class="nm">5 · Order book</span><span class="tagline">BID · ASK · DEPTH · QUEUE</span></div>
+  <ol>
+    <li>A <b>limit order book</b> lists resting buy orders (bids) and sell orders (asks) by price; orders at the same price fill by arrival time. <b>Spread</b> = best ask − best bid. <b>Depth</b> = the size resting at each level.</li>
+    <li>A <b>market order</b> walks the book: it fills level by level, so the average price worsens with size. That worsening against the arrival mid is <b>slippage</b>.</li>
+    <li>A buy <b>stop</b> placed above a trendline becomes a market order the moment price trades through it, so it demands liquidity from the side of the book that is thinning.</li>
+    <li>A passive <b>limit</b> order earns the spread but is most likely to fill when the breakout fails and price trades back through it — <b>adverse selection</b>.</li>
+  </ol>
+  <div class="ask">OHLCV bars carry no book data. Spread and depth are invisible here; measure them with level-1 or level-2 data.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">6 · Open and close auctions</span><span class="tagline">SINGLE-PRICE CALLS · BENCHMARK PRICES</span></div>
+  <ol>
+    <li>In an <b>auction</b>, orders accumulate during a call period and cross at one price that maximises matched volume. Most exchanges run one at the <b>open</b> and one at the <b>close</b>.</li>
+    <li>The opening auction does the price discovery for the overnight gap. The closing auction sets the official close used by index funds, fund valuation and market-on-close orders, and often draws a large share of the day's volume.</li>
+    <li>Every pipeline here sets its position from the <b>close</b> and earns the <b>next bar's</b> close-to-close return, which assumes a fill at that close. In real trading you only know the close after the closing cross, so the realistic fill is the next open or the next continuous session. That gap is delay cost, and for daily bars it can dominate the other cost terms.</li>
+    <li>24/7 markets such as crypto have no auctions, so a daily close is a timestamp convention. Liquidity still follows the clock, as the next block shows.</li>
+  </ol>
+  <div class="ask">If a rule decides at the close, also test it with fills at the next open. The drop is the delay cost.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">7 · Continuous trading sessions</span><span class="tagline">BETWEEN THE AUCTIONS</span></div>
+  <ol>
+    <li>Between the auctions, <b>continuous trading</b> matches orders as they arrive, by price then time, with a live spread and live depth.</li>
+    <li>Volume and spreads follow an intraday pattern: typically heavy and wide around the open, thinner midday, and heavy again into the close. Pre-market and post-market sessions are thinner still.</li>
+    <li>Hourly bars therefore straddle different regimes. A breakout flagged in a midday bar fills into a thinner book than one at the open: same signal, different cost.</li>
+    <li><b>Control</b> — schedule execution to the volume profile (VWAP-style) instead of a clock time, and prefer liquid windows for size.</li>
+  </ol>
+  <div class="ask">The same breakout signal can carry two very different costs depending on where in the session it fires.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">8 · Liquidity events</span><span class="tagline">WHEN THE BOOK THINS</span></div>
+  <ol>
+    <li><b>Scheduled</b> — earnings and macro releases, index rebalances, futures and options expiries, auction imbalances. <b>Unscheduled</b> — news shocks, trading halts and circuit breakers, flash moves, venue outages, liquidation cascades in crypto.</li>
+    <li>In these windows liquidity providers widen spreads or pull quotes: depth falls, the spread rises, and temporary impact jumps for the same order size.</li>
+    <li>Breakouts often coincide with liquidity events, since a break of a level is frequently the news itself. The cost on a breakout is therefore likely higher than the all-weather average.</li>
+    <li><b>Controls</b> — size down or stand aside around scheduled events, and cost the real run's worst stretches (its deepest drawdown) at stressed spreads rather than at the average.</li>
+  </ol>
+  <div class="ask">Liquidity is cheapest when you do not need it and dearest when you do.</div>
+</div>
+""", unsafe_allow_html=True)
+
+    sec("W", "How each concept bears on a permutation test")
+    st.table(pd.DataFrame({
+        "Effect on the test": [
+            "The test is gross. A small p-value says the edge is unlikely to be noise, not that it is larger than the cost of capturing it.",
+            "Permutation removes serial structure, including any footprint other traders' flow leaves. Your own orders never feed back into prices, in the real run or in the null.",
+            "The real run and every permutation assume you are a price-taker, so the p-value carries no information about capacity.",
+            "Bar permutation shuffles intrabar shapes and gaps separately and across time, so hourly bars lose their time-of-day pattern. Gaps, where the opening auction does its price discovery, keep their distribution but are detached from the bars they belong to.",
+            "Permutation destroys volatility clustering, so the null contains no stress regimes. Real liquidity events cluster, and execution costs peak inside them.",
+        ],
+        "What to do": [
+            "Charge a per-trade cost to the real run and to every permutation, re-run, and report net PF beside gross.",
+            "Treat the result as a signal-quality test. Slice size, timing and venue are execution choices it cannot see.",
+            "Estimate impact with the square-root rule (impact ≈ Y · σ · √(Q / ADV)) and compare it with the per-trade edge at the size you intend to run.",
+            "A rule that leans on session effects is tested against a null without them. For rules that decide at the close, also run a daily-bar check.",
+            "Look at the real run's deepest drawdown stretch and ask what it would have cost to trade through it.",
+        ],
+    }, index=["Transaction costs", "Information leakage", "Market impact and ADV",
+               "Auctions and sessions", "Order book and liquidity events"]))
+
     sec("S", "Recommended settings by bar size")
     st.table(pd.DataFrame(
         {
@@ -2230,10 +2361,21 @@ flat by design — the channel, the MAs and the tree features need history befor
             "Peak-to-trough fall in cumulative log return.",
             "Correlation of a series with its own lag; |returns| reveals volatility clustering.",
             "Var(q-bar returns) / (q · Var(1-bar returns)); >1 trend-like, <1 mean-reverting.",
+            "Transaction cost analysis: estimating and measuring execution cost before, during and after a trade.",
+            "Realised result versus the paper result at the decision price: delay, spread, impact, fees and missed fills.",
+            "Mid price when the order reaches the market; the usual benchmark for slippage.",
+            "Average daily volume: mean traded volume per day over a trailing window.",
+            "Order size divided by the volume traded in the same window (ADV for a daily view).",
+            "Price concession for consuming liquidity now; fades once trading stops.",
+            "Lasting price shift from the information your order reveals; does not revert.",
+            "Your intent becoming visible before you finish trading, so others trade ahead of it.",
+            "Best ask minus best bid / the size resting at each price level.",
+            "Orders accumulate and cross at one price; run at the open and at the close.",
         ]},
         index=["Profit factor", "MCPT p-value", "Permutation", "Null distribution",
                "Training window", "Out-of-sample", "Sharpe", "Max drawdown",
-               "ACF", "Variance ratio"]))
+               "ACF", "Variance ratio",
+               "TCA", "Implementation shortfall", "Arrival price", "ADV", "Participation rate", "Temporary impact", "Permanent impact", "Information leakage", "Spread / depth", "Auction (call)"]))
 
     sec("K", "Before you report a result")
     st.markdown(
@@ -2245,7 +2387,7 @@ flat by design — the channel, the MAs and the tree features need history befor
   <li><b>State N and p.</b> Permutations completed, real PF, noise median, p-value.</li>
   <li><b>Show the null.</b> Include the histogram and the equity panel, not just the headline number.</li>
   <li><b>Report the neighbours.</b> One adjacent bar size and one adjacent grid setting.</li>
-  <li><b>Declare costs.</b> Every figure here is gross; say so explicitly.</li>
+  <li><b>Declare costs and capacity.</b> Every figure here is gross and assumes a price-taker; say so, and state the per-trade cost and order size ÷ ADV you would assume.</li>
 </ul>
 <p>The results JSON exported from the Lab already carries the full configuration and every permuted profit factor —
 attach it, and the run can be reproduced exactly.</p>
