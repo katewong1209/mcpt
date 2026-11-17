@@ -1,4 +1,4 @@
-"""PERMUTLAB — Monte Carlo Permutation Testing terminal for trading strategies."""
+"""Permutation Tests · Trading Strategies — MCPT terminal. Built by Kate Wong."""
 import io
 import json
 import threading
@@ -28,13 +28,17 @@ from moving_average import ma_crossover
 from tree_strat import train_tree, tree_strategy
 
 st.set_page_config(
-    page_title="PERMUTLAB · MCPT Terminal",
+    page_title="Permutation Tests · Trading Strategies",
     page_icon="🧪",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ---------------------------------------------------------------- palette
+APP_NAME = "Permutation Tests Trading Strategies"
+AUTHOR = "Kate Wong"
+BASE_SEED = 69          # fixed, not user-editable
+ANATOMY_SEED = 4242     # fixed, not user-editable
+
 C = dict(
     ink="#05070d", panel="#0b101c", panel2="#101728",
     btc="#f7931a", btc2="#ffb347", cyan="#22d3ee", magenta="#ff2ea6",
@@ -53,173 +57,205 @@ CSS = """
   --green:#2ce5a7; --red:#ff4d5e; --violet:#8b7bff;
   --text:#e8ecf6; --muted:#8b94ab; --line:rgba(247,147,26,.16);
 }
-html,body,[class*="st-"]{font-family:'Space Grotesk',system-ui,sans-serif;}
-code,pre,.mono{font-family:'IBM Plex Mono',monospace !important;}
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stSidebar"]{
+  font-family:'Space Grotesk',system-ui,sans-serif;
+}
+p, li, label, .stMarkdown, [data-testid="stWidgetLabel"]{font-family:'Space Grotesk',system-ui,sans-serif;}
+code, pre, .mono{font-family:'IBM Plex Mono',monospace !important;}
+
+/* --- icon fonts must never inherit the display face (ligature leak fix) --- */
+[data-testid="stIconMaterial"], span[data-testid="stIconMaterial"],
+.material-symbols-rounded, .material-symbols-outlined, .material-icons,
+[data-baseweb="icon"] > svg, [data-testid="stExpander"] summary span{
+  font-family:'Material Symbols Rounded','Material Symbols Outlined','Material Icons' !important;
+  font-feature-settings:'liga' !important;
+  -webkit-font-feature-settings:'liga' !important;
+  -webkit-font-smoothing:antialiased;
+}
+/* sidebar collapse / expand: draw our own chevron so no raw ligature can show */
+[data-testid="stSidebarCollapseButton"] button span,
+[data-testid="stSidebarCollapsedControl"] button span,
+[data-testid="stExpandSidebarButton"] span{font-size:0 !important;line-height:0 !important;}
+[data-testid="stSidebarCollapseButton"] button::after{content:"\\2039\\2039";}
+[data-testid="stSidebarCollapsedControl"] button::after{content:"\\203A\\203A";}
+[data-testid="stExpandSidebarButton"]::after{content:"\\203A\\203A";}
+[data-testid="stSidebarCollapseButton"] button::after,
+[data-testid="stSidebarCollapsedControl"] button::after,
+[data-testid="stExpandSidebarButton"]::after{
+  font-family:'IBM Plex Mono',monospace;font-size:1rem;color:var(--muted);
+  letter-spacing:-1px;line-height:1;transition:color .15s ease;
+}
+[data-testid="stSidebarCollapseButton"] button:hover::after,
+[data-testid="stSidebarCollapsedControl"] button:hover::after,
+[data-testid="stExpandSidebarButton"]:hover::after{color:var(--btc2);}
 
 [data-testid="stAppViewContainer"]{
   background:
-    radial-gradient(1100px 700px at 88% -12%, rgba(34,211,238,.11), transparent 60%),
-    radial-gradient(950px 640px at -12% 12%, rgba(247,147,26,.13), transparent 55%),
-    radial-gradient(820px 820px at 52% 112%, rgba(255,46,166,.08), transparent 62%),
+    radial-gradient(1100px 700px at 88% -12%, rgba(34,211,238,.10), transparent 60%),
+    radial-gradient(950px 640px at -12% 12%, rgba(247,147,26,.12), transparent 55%),
+    radial-gradient(820px 820px at 52% 112%, rgba(255,46,166,.07), transparent 62%),
     linear-gradient(180deg,#05070d 0%,#070b14 100%);
   color:var(--text);
 }
 [data-testid="stAppViewContainer"]::before{
   content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
   background:
-    repeating-linear-gradient(0deg, rgba(139,148,171,.045) 0 1px, transparent 1px 52px),
-    repeating-linear-gradient(90deg, rgba(139,148,171,.045) 0 1px, transparent 1px 52px);
+    repeating-linear-gradient(0deg, rgba(139,148,171,.04) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(90deg, rgba(139,148,171,.04) 0 1px, transparent 1px 56px);
 }
 [data-testid="stAppViewContainer"]::after{
-  content:""; position:fixed; inset:0; z-index:9999; pointer-events:none; opacity:.05;
+  content:""; position:fixed; inset:0; z-index:9999; pointer-events:none; opacity:.045;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
 }
 [data-testid="stHeader"]{background:transparent;}
 #MainMenu, footer, [data-testid="stDecoration"]{visibility:hidden; height:0;}
-.block-container{padding-top:1.2rem; padding-bottom:3rem; max-width:1500px;}
+.block-container{padding-top:1.1rem; padding-bottom:3rem; max-width:1480px;}
 
-/* scrollbars — artifact palette */
 *::-webkit-scrollbar{width:10px;height:10px}
 *::-webkit-scrollbar-track{background:#0a0f1a}
 *::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--btc),var(--magenta));border-radius:8px;border:2px solid #0a0f1a}
 *::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,var(--cyan),var(--violet))}
 *{scrollbar-width:thin; scrollbar-color:#f7931a #0a0f1a;}
 
-/* sidebar */
 [data-testid="stSidebar"]{
   background:linear-gradient(180deg,#0a0f1a 0%,#0b1120 100%);
-  border-right:1px solid var(--line); min-width:332px; max-width:332px;
+  border-right:1px solid var(--line); min-width:326px; max-width:326px;
 }
-[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3{color:var(--text);}
-.sb-sec{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;
-  color:var(--btc);text-transform:uppercase;margin:1.15rem 0 .35rem;
+.sb-sec{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.2em;
+  color:var(--btc);text-transform:uppercase;margin:1.1rem 0 .45rem;
   display:flex;align-items:center;gap:.5rem;}
 .sb-sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent);}
-.sb-logo{font-weight:700;font-size:1.5rem;letter-spacing:-.02em;line-height:1;}
-.sb-logo em{font-style:normal;background:linear-gradient(90deg,var(--btc),var(--magenta),var(--cyan));
+.sb-logo{font-weight:700;font-size:1.06rem;letter-spacing:-.01em;line-height:1.2;color:var(--text);}
+.sb-logo em{display:block;font-style:normal;font-size:1.22rem;
+  background:linear-gradient(90deg,var(--btc),var(--magenta),var(--cyan));
   -webkit-background-clip:text;background-clip:text;color:transparent;}
-.sb-tag{font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--muted);letter-spacing:.18em;margin-top:.2rem;}
+.sb-tag{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--muted);letter-spacing:.16em;margin-top:.35rem;}
 
-/* hero */
-.hero{position:relative;padding:1.1rem 0 .4rem;}
-.hero .tape{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.28em;color:var(--cyan);}
+.hero{position:relative;padding:.6rem 0 .2rem;}
+.hero .tape{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.26em;color:var(--cyan);}
 .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);
-  box-shadow:0 0 10px var(--green);margin-right:.55rem;animation:pulse 1.8s infinite;}
+  box-shadow:0 0 10px var(--green);margin-right:.55rem;animation:pulse 1.9s infinite;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.hero h1{font-size:clamp(2.3rem,4.6vw,3.7rem);font-weight:700;letter-spacing:-.03em;
-  margin:.25rem 0 .1rem;line-height:1.02;color:var(--text);}
-.hero h1 .grad{background:linear-gradient(92deg,var(--btc) 5%,var(--magenta) 50%,var(--cyan) 95%);
+.hero h1{font-size:clamp(1.9rem,3.6vw,2.9rem);font-weight:700;letter-spacing:-.025em;
+  margin:.3rem 0 .1rem;line-height:1.06;color:var(--text);}
+.hero h1 .grad{display:block;background:linear-gradient(92deg,var(--btc) 5%,var(--magenta) 52%,var(--cyan) 95%);
   -webkit-background-clip:text;background-clip:text;color:transparent;}
-.hero .sub{color:var(--muted);max-width:820px;font-size:.98rem;margin:.2rem 0 .7rem;}
+.hero .sub{color:var(--muted);max-width:830px;font-size:.94rem;margin:.35rem 0 .6rem;}
 .hero .sub b{color:var(--btc2);font-weight:600;}
-.hairline{height:3px;border-radius:3px;margin:.55rem 0 1rem;
+.hairline{height:3px;border-radius:3px;margin:.5rem 0 .9rem;
   background:linear-gradient(90deg,var(--btc),var(--magenta),var(--cyan),var(--btc));
-  background-size:300% 100%;animation:shimmer 7s linear infinite;opacity:.85;}
+  background-size:300% 100%;animation:shimmer 8s linear infinite;opacity:.8;}
 @keyframes shimmer{0%{background-position:0% 0}100%{background-position:300% 0}}
-.chips{display:flex;flex-wrap:wrap;gap:.45rem;margin-bottom:.4rem;}
-.chip{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.08em;
-  padding:.28rem .6rem;border-radius:999px;border:1px solid var(--line);
+.chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.3rem;}
+.chip{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.07em;
+  padding:.26rem .58rem;border-radius:999px;border:1px solid var(--line);
   background:rgba(16,23,40,.75);color:var(--muted);}
 .chip b{color:var(--text);font-weight:600;}
 .chip.hot{border-color:rgba(247,147,26,.5);color:var(--btc2);}
 .chip.cool{border-color:rgba(34,211,238,.4);color:var(--cyan);}
 
-/* cards */
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:.7rem;margin:.6rem 0 .9rem;}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:.7rem;margin:.5rem 0 .9rem;}
 .card{position:relative;overflow:hidden;background:linear-gradient(160deg,#0d1322,#0a0f1a);
-  border:1px solid var(--line);border-radius:14px;padding:.8rem .95rem .7rem;}
+  border:1px solid var(--line);border-radius:14px;padding:.75rem .95rem .65rem;}
 .card::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;
   background:linear-gradient(90deg,var(--btc),var(--magenta));opacity:.8;}
 .card.cyan::before{background:linear-gradient(90deg,var(--cyan),var(--violet));}
 .card.green::before{background:linear-gradient(90deg,var(--green),var(--cyan));}
 .card.red::before{background:linear-gradient(90deg,var(--red),var(--magenta));}
-.card .k{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.18em;
+.card .k{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.17em;
   text-transform:uppercase;color:var(--muted);}
-.card .v{font-family:'IBM Plex Mono',monospace;font-size:1.55rem;font-weight:600;color:var(--text);margin-top:.15rem;}
-.card .d{font-size:.7rem;color:var(--muted);margin-top:.1rem;}
+.card .v{font-family:'IBM Plex Mono',monospace;font-size:1.5rem;font-weight:600;color:var(--text);margin-top:.12rem;}
+.card .d{font-size:.7rem;color:var(--muted);margin-top:.08rem;}
 .card .d.up{color:var(--green);} .card .d.dn{color:var(--red);} .card .d.warn{color:var(--btc2);}
 
-/* verdict */
-.verdict{border-radius:16px;padding:1rem 1.2rem;margin:.4rem 0 1rem;position:relative;overflow:hidden;
+.verdict{border-radius:16px;padding:.95rem 1.15rem;margin:.3rem 0 .9rem;
   border:1px solid;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;}
-.verdict .big{font-weight:700;font-size:1.25rem;letter-spacing:.02em;}
-.verdict .txt{color:var(--muted);font-size:.86rem;flex:1;min-width:260px;}
+.verdict .big{font-weight:700;font-size:1.2rem;letter-spacing:.02em;}
+.verdict .txt{color:var(--muted);font-size:.85rem;flex:1;min-width:260px;line-height:1.55;}
 .verdict.sig{border-color:rgba(44,229,167,.5);background:linear-gradient(120deg,rgba(44,229,167,.12),rgba(34,211,238,.06));}
-.verdict.sig .big{color:var(--green);text-shadow:0 0 18px rgba(44,229,167,.5);}
+.verdict.sig .big{color:var(--green);text-shadow:0 0 18px rgba(44,229,167,.45);}
 .verdict.weak{border-color:rgba(247,147,26,.5);background:linear-gradient(120deg,rgba(247,147,26,.13),rgba(255,46,166,.05));}
-.verdict.weak .big{color:var(--btc2);text-shadow:0 0 18px rgba(247,147,26,.5);}
+.verdict.weak .big{color:var(--btc2);text-shadow:0 0 18px rgba(247,147,26,.45);}
 .verdict.noise{border-color:rgba(255,77,94,.5);background:linear-gradient(120deg,rgba(255,77,94,.13),rgba(255,46,166,.06));}
-.verdict.noise .big{color:var(--red);text-shadow:0 0 18px rgba(255,77,94,.5);}
+.verdict.noise .big{color:var(--red);text-shadow:0 0 18px rgba(255,77,94,.45);}
 
-/* sections */
-.sec{display:flex;align-items:center;gap:.65rem;margin:1.3rem 0 .5rem;}
-.sec .idx{font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--ink);
-  background:linear-gradient(135deg,var(--btc),var(--magenta));border-radius:6px;padding:.15rem .4rem;font-weight:600;}
-.sec .t{font-weight:600;font-size:1.06rem;color:var(--text);letter-spacing:.01em;}
+.sec{display:flex;align-items:center;gap:.6rem;margin:1.15rem 0 .5rem;}
+.sec .idx{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--ink);
+  background:linear-gradient(135deg,var(--btc),var(--magenta));border-radius:6px;padding:.14rem .4rem;font-weight:600;}
+.sec .t{font-weight:600;font-size:1.02rem;color:var(--text);}
 .sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent);}
 
-/* onboarding / method cards */
 .panel{background:linear-gradient(150deg,#0d1424,#0a0f1a);border:1px solid var(--line);
-  border-radius:16px;padding:1.15rem 1.3rem;margin:.5rem 0;}
-.panel h3{margin:.1rem 0 .5rem;font-size:1.15rem;color:var(--text);}
-.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.8rem;margin-top:.7rem;}
-.step{border:1px solid rgba(139,148,171,.18);border-radius:12px;padding:.8rem .9rem;background:rgba(11,16,28,.6);}
-.step .n{font-family:'IBM Plex Mono',monospace;font-size:1.3rem;font-weight:600;
+  border-radius:16px;padding:1.05rem 1.2rem;margin:.5rem 0;}
+.panel h3{margin:.1rem 0 .45rem;font-size:1.1rem;color:var(--text);}
+.panel p{color:var(--muted);font-size:.87rem;line-height:1.65;margin:.2rem 0;}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:.75rem;margin-top:.7rem;}
+.step{border:1px solid rgba(139,148,171,.18);border-radius:12px;padding:.75rem .85rem;background:rgba(11,16,28,.6);}
+.step .n{font-family:'IBM Plex Mono',monospace;font-size:1.25rem;font-weight:600;
   background:linear-gradient(90deg,var(--btc),var(--magenta));-webkit-background-clip:text;background-clip:text;color:transparent;}
-.step .h{font-weight:600;color:var(--text);margin:.2rem 0;}
-.step .b{font-size:.8rem;color:var(--muted);line-height:1.45;}
-.pd-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;}
-.pd{border-radius:14px;padding:1rem 1.1rem;border:1px solid;}
+.step .h{font-weight:600;color:var(--text);margin:.15rem 0;}
+.step .b{font-size:.79rem;color:var(--muted);line-height:1.5;}
+.pd-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
+.pd{border-radius:14px;padding:.9rem 1rem;border:1px solid;}
 .pd.keep{border-color:rgba(44,229,167,.35);background:rgba(44,229,167,.06);}
 .pd.kill{border-color:rgba(255,77,94,.35);background:rgba(255,77,94,.06);}
-.pd h4{margin:0 0 .5rem;font-size:.95rem;}
+.pd h4{margin:0 0 .45rem;font-size:.92rem;}
 .pd.keep h4{color:var(--green);} .pd.kill h4{color:var(--red);}
-.pd ul{margin:0;padding-left:1.05rem;color:var(--muted);font-size:.83rem;line-height:1.65;}
+.pd ul{margin:0;padding-left:1.05rem;color:var(--muted);font-size:.82rem;line-height:1.6;}
 .pd li b{color:var(--text);font-weight:600;}
 .callout{border-left:3px solid var(--btc);background:rgba(247,147,26,.07);
-  border-radius:0 12px 12px 0;padding:.8rem 1rem;color:var(--muted);font-size:.86rem;margin:.8rem 0;}
+  border-radius:0 12px 12px 0;padding:.75rem .95rem;color:var(--muted);font-size:.85rem;margin:.75rem 0;line-height:1.6;}
 .callout b{color:var(--btc2);}
+.strat-block{border:1px solid var(--line);border-radius:16px;padding:1rem 1.15rem;margin:.7rem 0;
+  background:linear-gradient(155deg,#0d1424,#0a0f1a);}
+.strat-block .hd{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin-bottom:.45rem;}
+.strat-block .nm{font-weight:700;font-size:1.05rem;color:var(--text);}
+.strat-block .tagline{font-family:'IBM Plex Mono',monospace;font-size:.66rem;color:var(--cyan);letter-spacing:.08em;}
+.strat-block ol{margin:.25rem 0 .7rem;padding-left:1.15rem;color:var(--muted);font-size:.84rem;line-height:1.65;}
+.strat-block ol b{color:var(--text);font-weight:600;}
+.strat-block .ask{font-size:.8rem;color:var(--btc2);border-top:1px dashed rgba(247,147,26,.25);padding-top:.55rem;margin-top:.6rem;}
 
-/* widgets */
-button[data-baseweb="tab"]{font-family:'IBM Plex Mono',monospace;font-size:.78rem;letter-spacing:.06em;color:var(--muted);}
+button[data-baseweb="tab"]{font-family:'IBM Plex Mono',monospace;font-size:.76rem;letter-spacing:.05em;color:var(--muted);}
 button[data-baseweb="tab"][aria-selected="true"]{color:var(--btc2);}
 div[data-baseweb="tab-highlight"]{background:linear-gradient(90deg,var(--btc),var(--magenta));height:3px;}
 div[data-baseweb="tab-border"]{background:var(--line);}
 [data-testid="stBaseButton-primary"]{
   background:linear-gradient(135deg,var(--btc),var(--magenta));color:#0a0710;border:none;
-  font-weight:700;letter-spacing:.04em;box-shadow:0 4px 22px rgba(247,147,26,.35);
+  font-weight:700;letter-spacing:.04em;box-shadow:0 4px 20px rgba(247,147,26,.32);
   transition:transform .15s ease, box-shadow .15s ease;}
-[data-testid="stBaseButton-primary"]:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(255,46,166,.45);color:#0a0710;}
-[data-testid="stBaseButton-secondary"]{background:var(--panel2);border:1px solid rgba(34,211,238,.35);color:var(--text);}
+[data-testid="stBaseButton-primary"]:hover{transform:translateY(-1px);box-shadow:0 6px 26px rgba(255,46,166,.42);color:#0a0710;}
+[data-testid="stBaseButton-secondary"]{background:var(--panel2);border:1px solid rgba(34,211,238,.32);color:var(--text);}
 [data-testid="stBaseButton-secondary"]:hover{border-color:var(--btc);color:var(--btc2);}
-[data-baseweb="slider"] div[role="slider"]{background:var(--btc);box-shadow:0 0 10px rgba(247,147,26,.6);}
+[data-baseweb="slider"] div[role="slider"]{background:var(--btc);box-shadow:0 0 10px rgba(247,147,26,.55);}
 [data-baseweb="select"]>div{background:var(--panel2);border-color:var(--line);}
-[data-testid="stNumberInput"] input,[data-testid="stTextInput"] input{background:var(--panel2);color:var(--text);border-color:var(--line);font-family:'IBM Plex Mono',monospace;}
+[data-testid="stNumberInput"] input{background:var(--panel2);color:var(--text);border-color:var(--line);font-family:'IBM Plex Mono',monospace;}
 [data-baseweb="checkbox"] [aria-checked="true"]{background-color:var(--btc) !important;}
 [data-testid="stFileUploaderDropzone"]{background:var(--panel2);border:1px dashed rgba(247,147,26,.4);border-radius:12px;}
+[data-testid="stFileUploaderDropzoneInstructions"] span{color:var(--muted);}
 [data-testid="stProgress"] div[role="progressbar"]{background:rgba(139,148,171,.15);}
 [data-testid="stProgress"] div[role="progressbar"]>div{background:linear-gradient(90deg,var(--btc),var(--magenta),var(--cyan));}
 [data-testid="stExpander"] details{background:var(--panel);border:1px solid var(--line);border-radius:12px;}
-[data-testid="stCodeBlock"] pre{max-height:460px;overflow:auto;background:#0a0f1a !important;
+[data-testid="stCodeBlock"] pre{max-height:440px;overflow:auto;background:#0a0f1a !important;
   border:1px solid var(--line);border-radius:12px;}
-[data-testid="stTable"] table{background:transparent;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:.8rem;}
+[data-testid="stTable"] table{background:transparent;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:.78rem;}
 [data-testid="stTable"] th{color:var(--btc2) !important;border-bottom:1px solid var(--line) !important;}
 [data-testid="stTable"] td{border-bottom:1px solid rgba(139,148,171,.12) !important;}
 [data-testid="stAlert"]{border-radius:12px;}
-.hist-row{display:flex;align-items:center;gap:.6rem;padding:.45rem .6rem;border:1px solid rgba(139,148,171,.14);
-  border-radius:10px;margin-bottom:.4rem;background:rgba(11,16,28,.55);font-family:'IBM Plex Mono',monospace;font-size:.72rem;}
-.hist-row .lbl{flex:1;color:var(--text);}
+.hist-row{display:flex;align-items:center;gap:.6rem;padding:.42rem .6rem;border:1px solid rgba(139,148,171,.14);
+  border-radius:10px;margin-bottom:.35rem;background:rgba(11,16,28,.55);font-family:'IBM Plex Mono',monospace;font-size:.71rem;flex-wrap:wrap;}
+.hist-row .lbl{flex:1;color:var(--text);min-width:180px;}
 .hist-row .m{color:var(--muted);}
-.badge{padding:.12rem .5rem;border-radius:999px;font-size:.62rem;font-weight:600;}
+.badge{padding:.12rem .5rem;border-radius:999px;font-size:.61rem;font-weight:600;}
 .badge.sig{background:rgba(44,229,167,.15);color:var(--green);}
 .badge.weak{background:rgba(247,147,26,.15);color:var(--btc2);}
 .badge.noise{background:rgba(255,77,94,.15);color:var(--red);}
-.foot{margin-top:2.2rem;padding-top:.9rem;border-top:1px solid var(--line);
-  font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.14em;color:var(--muted);}
+.foot{margin-top:2rem;padding-top:.85rem;border-top:1px solid var(--line);
+  font-family:'IBM Plex Mono',monospace;font-size:.63rem;letter-spacing:.13em;color:var(--muted);}
+.foot b{color:var(--btc2);font-weight:600;}
 @media (max-width:760px){
   [data-testid="stSidebar"]{min-width:0;max-width:none;}
   .pd-grid{grid-template-columns:1fr;}
-  .card .v{font-size:1.25rem;}
+  .card .v{font-size:1.22rem;}
 }
 </style>
 """
@@ -241,9 +277,9 @@ def base_fig(height=360, title=None):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(10,15,26,.55)",
         font=dict(family="IBM Plex Mono, monospace", size=11, color="#aab3c8"),
-        margin=dict(l=48, r=18, t=44 if title else 18, b=42),
+        margin=dict(l=48, r=18, t=42 if title else 16, b=40),
         title=dict(text=title, x=0.01, font=dict(size=13, color=C["text"], family="Space Grotesk")),
-        legend=dict(orientation="h", y=1.1, x=0, bgcolor="rgba(0,0,0,0)"),
+        legend=dict(orientation="h", y=1.12, x=0, bgcolor="rgba(0,0,0,0)"),
         hovermode="x unified",
         hoverlabel=dict(bgcolor=C["panel2"], bordercolor=C["btc"], font=dict(family="IBM Plex Mono", size=11)),
     )
@@ -252,24 +288,31 @@ def base_fig(height=360, title=None):
     return fig
 
 
+def finite_only(y):
+    y = np.asarray(y, dtype=float)
+    return np.where(np.isfinite(y), y, np.nan)
+
+
 def hist_fig(perm_pfs, real_pf, p, live=False):
     vals = np.asarray([v for v in perm_pfs if np.isfinite(v)], dtype=float)
-    fig = base_fig(380, "Optimized PF on permuted noise vs real market" + (" · LIVE" if live else ""))
+    fig = base_fig(370, "Optimized PF on permuted noise vs real market" + (" · LIVE" if live else ""))
     if len(vals) == 0:
-        fig.add_annotation(text="collecting permutations…", xref="paper", yref="paper", x=.5, y=.5, showarrow=False, font=dict(color=C["muted"]))
+        fig.add_annotation(text="collecting permutations…", xref="paper", yref="paper",
+                           x=.5, y=.5, showarrow=False, font=dict(color=C["muted"]))
         return fig
-    lo = min(vals.min(), real_pf if np.isfinite(real_pf) else vals.min())
-    hi = max(vals.max(), real_pf if np.isfinite(real_pf) else vals.max())
+    rf = real_pf if np.isfinite(real_pf) else None
+    lo = min(vals.min(), rf if rf is not None else vals.min())
+    hi = max(vals.max(), rf if rf is not None else vals.max())
     pad = max((hi - lo) * 0.05, 0.01)
     counts, edges = np.histogram(vals, bins=42, range=(lo - pad, hi + pad))
     centers = (edges[:-1] + edges[1:]) / 2
     fig.add_trace(go.Bar(x=centers, y=counts, width=(edges[1] - edges[0]) * .92,
                          marker_color=C["cyan"], opacity=.78, name="Permuted best PF",
                          hovertemplate="PF %{x:.3f}<br>count %{y}<extra></extra>"))
-    if np.isfinite(real_pf):
-        fig.add_vrect(x0=real_pf, x1=hi + pad, fillcolor=C["red"], opacity=.08, line_width=0)
-        fig.add_vline(x=real_pf, line_color=C["btc"], line_width=2.5, line_dash="dash",
-                      annotation_text=f"REAL {real_pf:.3f}", annotation_position="top",
+    if rf is not None:
+        fig.add_vrect(x0=rf, x1=hi + pad, fillcolor=C["red"], opacity=.08, line_width=0)
+        fig.add_vline(x=rf, line_color=C["btc"], line_width=2.5, line_dash="dash",
+                      annotation_text=f"REAL {rf:.3f}", annotation_position="top",
                       annotation_font=dict(color=C["btc2"], size=11))
     med = float(np.median(vals))
     fig.add_vline(x=med, line_color=C["violet"], line_width=1.4, line_dash="dot",
@@ -284,8 +327,8 @@ def hist_fig(perm_pfs, real_pf, p, live=False):
     return fig
 
 
-def equity_fig(x, real_eq, samples, title="Equity — real vs permuted universes (cumulative log return)"):
-    fig = base_fig(380, title)
+def equity_fig(x, real_eq, samples, title="Equity — real vs permuted universes (Σ log return)"):
+    fig = base_fig(370, title)
     for i, s in enumerate(samples):
         fig.add_trace(go.Scatter(x=x[: len(s)], y=s, mode="lines",
                                  line=dict(color=C["cyan"], width=1), opacity=.26,
@@ -298,63 +341,89 @@ def equity_fig(x, real_eq, samples, title="Equity — real vs permuted universes
 
 
 def optcurve_fig(lookbacks, curve, best_L, mean=None, std=None):
-    fig = base_fig(360, "Data-mining surface — PF vs lookback · real vs noise envelope")
-    if mean is not None:
+    fig = base_fig(340, "Data-mining surface — PF vs lookback · real vs noise envelope")
+    if mean is not None and std is not None:
         m = np.isfinite(mean) & np.isfinite(std)
         xl = np.asarray(lookbacks)[m]
-        fig.add_trace(go.Scatter(x=np.concatenate([xl, xl[::-1]]),
-                                 y=np.concatenate([(mean + std)[m], (mean - std)[m][::-1]]),
-                                 fill="toself", fillcolor="rgba(139,123,255,.16)",
-                                 line=dict(width=0), name="Noise ±1σ", hoverinfo="skip"))
-        fig.add_trace(go.Scatter(x=xl, y=mean[m], mode="lines",
-                                 line=dict(color=C["cyan"], width=1.6, dash="dot"), name="Noise mean best-PF"))
-    fig.add_trace(go.Scatter(x=lookbacks, y=curve, mode="lines",
+        if len(xl):
+            fig.add_trace(go.Scatter(x=np.concatenate([xl, xl[::-1]]),
+                                     y=np.concatenate([(mean + std)[m], (mean - std)[m][::-1]]),
+                                     fill="toself", fillcolor="rgba(139,123,255,.16)",
+                                     line=dict(width=0), name="Noise ±1σ", hoverinfo="skip"))
+            fig.add_trace(go.Scatter(x=xl, y=mean[m], mode="lines",
+                                     line=dict(color=C["cyan"], width=1.6, dash="dot"),
+                                     name="Noise mean best-PF"))
+    yc = finite_only(curve)
+    fig.add_trace(go.Scatter(x=lookbacks, y=yc, mode="lines",
                              line=dict(color=C["btc"], width=2.2), name="Real PF(lookback)"))
     if best_L and best_L > 0:
         k = int(np.argmin(np.abs(np.asarray(lookbacks) - best_L)))
-        fig.add_trace(go.Scatter(x=[lookbacks[k]], y=[curve[k]], mode="markers",
-                                 marker=dict(symbol="star", size=14, color=C["magenta"],
-                                             line=dict(color=C["text"], width=1)),
-                                 name=f"Selected L={best_L}"))
+        if np.isfinite(yc[k]):
+            fig.add_trace(go.Scatter(x=[lookbacks[k]], y=[yc[k]], mode="markers",
+                                     marker=dict(symbol="star", size=13, color=C["magenta"],
+                                                 line=dict(color=C["text"], width=1)),
+                                     name=f"Selected L={best_L}"))
     fig.add_hline(y=1.0, line_color="rgba(139,148,171,.4)", line_dash="dash", line_width=1)
     fig.update_xaxes(title="Donchian lookback (bars)")
     fig.update_yaxes(title="Profit Factor")
     return fig
 
 
-def candle_fig(daily, overlays, markers, title):
-    fig = base_fig(440, title)
-    fig.add_trace(go.Candlestick(
-        x=daily.index, open=daily["open"], high=daily["high"], low=daily["low"], close=daily["close"],
-        increasing_line_color=C["green"], increasing_fillcolor="rgba(44,229,167,.55)",
-        decreasing_line_color=C["red"], decreasing_fillcolor="rgba(255,77,94,.55)",
-        name="OHLC · 1D", whiskerwidth=.4))
-    for name, (series, color, dash) in overlays.items():
-        fig.add_trace(go.Scatter(x=series.index, y=series.to_numpy(), mode="lines",
-                                 line=dict(color=color, width=1.5, dash=dash), name=name))
-    mt, mp, md = markers
-    up = md > 0
-    fig.add_trace(go.Scatter(x=mt[up], y=mp[up], mode="markers", name="Turn long",
-                             marker=dict(symbol="triangle-up", size=9, color=C["green"], line=dict(color=C["ink"], width=1))))
-    fig.add_trace(go.Scatter(x=mt[~up], y=mp[~up], mode="markers", name="Turn short/flat",
-                             marker=dict(symbol="triangle-down", size=9, color=C["magenta"], line=dict(color=C["ink"], width=1))))
+def price_fig(det, style, show_overlays, title):
+    fig = base_fig(420, title)
+    if style == "Candles":
+        d = det["daily"]
+        fig.add_trace(go.Candlestick(
+            x=d.index, open=d["open"], high=d["high"], low=d["low"], close=d["close"],
+            increasing_line_color=C["green"], increasing_fillcolor="rgba(44,229,167,.55)",
+            decreasing_line_color=C["red"], decreasing_fillcolor="rgba(255,77,94,.55)",
+            name="Price · 1D", whiskerwidth=.4))
+    else:
+        fig.add_trace(go.Scatter(x=det["eq_x"], y=det["close_ds"], mode="lines",
+                                 line=dict(color=C["btc"], width=1.8), name="Close · 1H"))
+    if show_overlays:
+        for name, (series, color, dash) in det["overlays"].items():
+            fig.add_trace(go.Scatter(x=series.index, y=finite_only(series.to_numpy()),
+                                     mode="lines", line=dict(color=color, width=1.4, dash=dash),
+                                     name=name))
     fig.update_layout(xaxis_rangeslider_visible=False, hovermode="x")
+    fig.update_yaxes(title="price")
+    return fig
+
+
+def position_fig(x, pos):
+    fig = base_fig(165, "Position lane — separate from price")
+    fig.add_trace(go.Scatter(x=x, y=pos, mode="lines",
+                             line=dict(color=C["cyan"], width=1.4, shape="hv"),
+                             fill="tozeroy", fillcolor="rgba(34,211,238,.18)", name="Position"))
+    fig.update_yaxes(range=[-1.3, 1.3], tickvals=[-1, 0, 1],
+                     ticktext=["−1 short", "0 flat", "+1 long"], title=None)
+    fig.update_layout(margin=dict(l=70, r=18, t=36, b=28), showlegend=False)
     return fig
 
 
 def dd_fig(x, dd):
-    fig = base_fig(210, "Drawdown (log-equity units)")
+    fig = base_fig(240, "Drawdown (log-equity units)")
     fig.add_trace(go.Scatter(x=x, y=dd, mode="lines", fill="tozeroy",
                              line=dict(color=C["red"], width=1.2),
                              fillcolor="rgba(255,77,94,.25)", name="Drawdown"))
     return fig
 
 
+def choices_fig(choices, title="Walk-forward — lookback re-selected at each training step"):
+    fig = base_fig(240, title)
+    fig.add_trace(go.Scatter(x=[t for t, _ in choices], y=[b for _, b in choices],
+                             mode="lines", line=dict(color=C["magenta"], width=2, shape="hv"),
+                             name="Chosen lookback"))
+    fig.update_yaxes(title="lookback (bars)")
+    return fig
+
+
 def acf_fig(lags, real, perm, n, title):
-    fig = base_fig(300, title)
+    fig = base_fig(290, title)
     fig.add_trace(go.Bar(x=lags, y=real, marker_color=C["btc"], opacity=.85, width=.42, name="Real"))
     fig.add_trace(go.Bar(x=lags, y=perm, marker_color=C["cyan"], opacity=.6, width=.42, name="Permuted"))
-    b = 1.96 / np.sqrt(n)
+    b = 1.96 / np.sqrt(max(n, 2))
     fig.add_hline(y=b, line_color="rgba(139,148,171,.5)", line_dash="dash", line_width=1)
     fig.add_hline(y=-b, line_color="rgba(139,148,171,.5)", line_dash="dash", line_width=1)
     fig.update_layout(barmode="group", bargap=.15)
@@ -363,7 +432,7 @@ def acf_fig(lags, real, perm, n, title):
 
 
 def spec_fig(fx, px, fy, py):
-    fig = base_fig(320, "Power spectrum of |returns| — long memory lives here (log-log)")
+    fig = base_fig(310, "Power spectrum of |returns| — long memory lives here (log-log)")
     fig.add_trace(go.Scatter(x=fx, y=px, mode="lines", line=dict(color=C["btc"], width=2), name="Real |r|"))
     fig.add_trace(go.Scatter(x=fy, y=py, mode="lines", line=dict(color=C["cyan"], width=1.6, dash="dot"), name="Permuted |r|"))
     fig.update_xaxes(type="log", title="frequency (cycles / bar)")
@@ -375,26 +444,26 @@ def corr_fig(rb, re, pb, pe, rho_r, rho_p):
     fig = make_subplots(rows=1, cols=2, subplot_titles=(f"Real · ρ = {rho_r:.3f}", f"Joint permutation · ρ = {rho_p:.3f}"))
     fig.add_trace(go.Scattergl(x=rb, y=re, mode="markers", marker=dict(size=3, color=C["btc"], opacity=.45), name="Real"), 1, 1)
     fig.add_trace(go.Scattergl(x=pb, y=pe, mode="markers", marker=dict(size=3, color=C["cyan"], opacity=.45), name="Permuted"), 1, 2)
-    fig.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,15,26,.55)",
+    fig.update_layout(height=330, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,15,26,.55)",
                       font=dict(family="IBM Plex Mono", size=11, color="#aab3c8"),
                       margin=dict(l=48, r=18, t=48, b=42), showlegend=False,
                       title=dict(text="Cross-market correlation survives joint permutation", x=.01,
                                  font=dict(size=13, color=C["text"], family="Space Grotesk")))
-    fig.update_xaxes(gridcolor="rgba(139,148,171,.1)", title="BTC log return")
-    fig.update_yaxes(gridcolor="rgba(139,148,171,.1)", title="ETH log return")
+    fig.update_xaxes(gridcolor="rgba(139,148,171,.1)", title="Currency 1 log return")
+    fig.update_yaxes(gridcolor="rgba(139,148,171,.1)", title="Currency 2 log return")
     for a in fig.layout.annotations:
         a.font = dict(family="IBM Plex Mono", size=11, color=C["muted"])
     return fig
 
 
 def imp_fig(importances):
-    names = ["diff6 (6h momentum)", "diff24 (1d momentum)", "diff168 (1w momentum)"]
-    fig = base_fig(230, "Tree feature importances — what the classifier actually uses")
+    names = ["diff6 · 6h momentum", "diff24 · 1d momentum", "diff168 · 1w momentum"]
+    fig = base_fig(220, "Tree feature importances — what the classifier actually uses")
     fig.add_trace(go.Bar(y=names, x=importances, orientation="h",
                          marker_color=[C["btc"], C["cyan"], C["magenta"]], opacity=.85,
                          text=[f"{v:.1%}" for v in importances], textposition="outside",
                          textfont=dict(color=C["text"])))
-    fig.update_xaxes(title="Gini importance", range=[0, max(importances) * 1.25 + 1e-6])
+    fig.update_xaxes(title="Gini importance", range=[0, max(importances) * 1.3 + 1e-6])
     return fig
 
 
@@ -409,12 +478,9 @@ def verdict(p):
 def cards_html(items):
     h = '<div class="cards">'
     for it in items:
-        cls = it.get("cls", "")
-        d = it.get("d", "")
-        dc = it.get("dc", "")
-        h += f'<div class="card {cls}"><div class="k">{it["k"]}</div><div class="v">{it["v"]}</div>'
-        if d:
-            h += f'<div class="d {dc}">{d}</div>'
+        h += f'<div class="card {it.get("cls","")}"><div class="k">{it["k"]}</div><div class="v">{it["v"]}</div>'
+        if it.get("d"):
+            h += f'<div class="d {it.get("dc","")}">{it["d"]}</div>'
         h += "</div>"
     return h + "</div>"
 
@@ -431,16 +497,22 @@ def fmt_t(s):
 def acf(x, nlags):
     x = np.asarray(x, float)
     x = x[np.isfinite(x)]
+    if len(x) < 8:
+        return np.zeros(nlags + 1), max(len(x), 1)
     x = x - x.mean()
     n = len(x)
     f = np.fft.rfft(x, n=2 ** int(np.ceil(np.log2(2 * n))))
     ac = np.fft.irfft(f * np.conj(f))[: nlags + 1]
+    if ac[0] <= 0:
+        return np.zeros(nlags + 1), n
     return ac / ac[0], n
 
 
 def logbin_spectrum(x, nbins=46):
     x = np.asarray(x, float)
     x = x[np.isfinite(x)]
+    if len(x) < 64:
+        return np.array([1.0]), np.array([1.0])
     x = x - x.mean()
     n = len(x)
     p = (np.abs(np.fft.rfft(x * np.hanning(n))) ** 2)[1:]
@@ -450,12 +522,24 @@ def logbin_spectrum(x, nbins=46):
     for a, b in zip(edges[:-1], edges[1:]):
         if b > a:
             fx.append(float(np.exp(np.mean(np.log(fr[a:b])))))
-            px.append(float(np.mean(p[a:b])))
+            px.append(float(max(np.mean(p[a:b]), 1e-18)))
+    if not fx:
+        return np.array([1.0]), np.array([1.0])
     return np.asarray(fx), np.asarray(px)
 
 
+def sanitize_range(key, lo, hi):
+    v = st.session_state.get(key)
+    if isinstance(v, (tuple, list)) and len(v) == 2:
+        a, b = int(v[0]), int(v[1])
+        if not (lo <= a < b <= hi):
+            st.session_state.pop(key, None)
+    elif v is not None:
+        st.session_state.pop(key, None)
+
+
 # ---------------------------------------------------------------- data
-@st.cache_data(show_spinner="Synthesizing BTC/ETH hourly feed…")
+@st.cache_data(show_spinner="Synthesizing demo feed…")
 def synth_pair(seed=7):
     return make_synthetic_pair(seed)
 
@@ -473,10 +557,15 @@ def parse_bytes(name, data):
     df.columns = [str(c).lower() for c in df.columns]
     df.index = pd.to_datetime(df.index).astype("datetime64[s]")
     df = df.sort_index()
+    df = df[~df.index.duplicated(keep="first")]
     need = {"open", "high", "low", "close"}
     if not need.issubset(df.columns):
-        raise ValueError(f"{name}: needs columns open/high/low/close")
-    return df[["open", "high", "low", "close"]].dropna()
+        raise ValueError(f"{name}: needs columns open / high / low / close")
+    df = df[["open", "high", "low", "close"]].astype(float).dropna()
+    df = df[(df[["open", "high", "low", "close"]] > 0).all(axis=1)]
+    if len(df) < 500:
+        raise ValueError(f"{name}: needs at least 500 hourly bars")
+    return df
 
 
 @st.cache_data(show_spinner=False)
@@ -484,46 +573,42 @@ def load_path(path, mtime):
     return parse_bytes(path, Path(path).read_bytes())
 
 
-def resolve_data(source, up_btc, up_eth):
-    eth = None
+def resolve_data(source, up1, up2):
+    """Returns (currency1, currency2 or None, label, notice)."""
     if source == "Upload files":
-        if up_btc is None:
+        if up1 is None:
             b, e = synth_pair()
-            return b, e, "SYNTHETIC (awaiting upload)"
-        btc = parse_bytes(up_btc.name, up_btc.getvalue())
-        if up_eth is not None:
-            eth = parse_bytes(up_eth.name, up_eth.getvalue())
-        return btc, eth, f"UPLOAD · {up_btc.name}"
-    if source == "Auto-detect files":
+            return b, e, "DEMO FEED", "No file uploaded yet — running on a seeded synthetic demo feed."
+        c1 = parse_bytes(up1.name, up1.getvalue())
+        c2 = parse_bytes(up2.name, up2.getvalue()) if up2 is not None else None
+        return c1, c2, up1.name, None
+    if source.startswith("Local"):
         p = Path("BTCUSD3600.pq")
-        if p.exists():
-            btc = load_path(str(p), p.stat().st_mtime)
-            pe = Path("ETHUSD3600.pq")
-            if pe.exists():
-                eth = load_path(str(pe), pe.stat().st_mtime)
-            return btc, eth, "BTCUSD3600.pq" + (" + ETH" if eth is not None else "")
+        c1 = load_path(str(p), p.stat().st_mtime)
+        pe = Path("ETHUSD3600.pq")
+        c2 = load_path(str(pe), pe.stat().st_mtime) if pe.exists() else None
+        return c1, c2, p.name + (" + ETH" if c2 is not None else ""), None
     b, e = synth_pair()
-    return b, e, "SYNTHETIC DEMO FEED"
+    return b, e, "DEMO FEED", None
 
 
-# ---------------------------------------------------------------- callbacks
+# ---------------------------------------------------------------- config & callbacks
 def collect_cfg():
     g = st.session_state.get
     depth = g("w_depth", "Unlimited")
-    lbmin = int(g("w_lbmin", 12))
-    lbmax = int(g("w_lbmax", 168))
+    lbmin, lbmax = int(g("w_lbmin", 12)), int(g("w_lbmax", 168))
     if lbmin >= lbmax:
         lbmin, lbmax = min(lbmin, lbmax - 1), max(lbmax, lbmin + 1)
+    is_years = g("w_is_years", (2016, 2020))
+    wf_years = g("w_wf_years", (2016, 2021))
     return dict(
         strategy=g("w_strategy", "donchian_is"),
         n_perms=int(g("w_perms", 1000)),
-        seed=int(g("w_seed", 69)),
+        seed=BASE_SEED,
         turbo=bool(g("w_turbo", True)),
         lb_min=lbmin, lb_max=lbmax, lb_step=int(g("w_lbstep", 1)),
-        is_start=int(g("w_is_years", (2016, 2020))[0]),
-        is_end=int(g("w_is_years", (2016, 2020))[1]),
-        wf_start=int(g("w_wf_years", (2016, 2021))[0]),
-        wf_end=int(g("w_wf_years", (2016, 2021))[1]),
+        is_start=int(is_years[0]), is_end=int(is_years[1]),
+        wf_start=int(wf_years[0]), wf_end=int(wf_years[1]),
         wf_train_years=int(g("w_wf_train", 4)),
         wf_step_days=int(g("w_wf_step", 30)),
         tree_leaf=int(g("w_leaf", 5)),
@@ -544,6 +629,9 @@ def start_run():
     if active and "stop" in active:
         active["stop"].set()
     cfg = collect_cfg()
+    if cfg["strategy"] == "ma" and cfg["ma_fast"] >= cfg["ma_slow"]:
+        st.session_state["run_error"] = "Fast MA must be shorter than slow MA."
+        return
     job = dict(
         id=uuid.uuid4().hex[:10], status="running", phase="Initializing…",
         config=cfg, start=time.time(), done=0, better=1, p=1.0,
@@ -574,18 +662,6 @@ def clear_active():
     st.session_state["active"] = None
 
 
-def randomize_seed():
-    st.session_state["w_seed"] = int(np.random.randint(0, 2**31 - 4096))
-
-
-def preset_quick():
-    st.session_state["w_perms"] = 200
-
-
-def preset_full():
-    st.session_state["w_perms"] = 1000
-
-
 def finalize(job):
     job["p"] = job["better"] / (job["done"] + 1)
     job["verdict"] = verdict(job["p"])
@@ -609,8 +685,18 @@ def delete_run(run_id):
     st.session_state["history"] = [r for r in st.session_state.get("history", []) if r["id"] != run_id]
 
 
-def reshuffle():
-    st.session_state["w_anat_seed"] = int(st.session_state.get("w_anat_seed", 42)) + 1
+def new_permutation_draw():
+    st.session_state["anat_draw"] = int(st.session_state.get("anat_draw", 0)) + 1
+
+
+def json_safe(o):
+    if isinstance(o, (np.floating, float)):
+        return float(o) if np.isfinite(o) else None
+    if isinstance(o, (np.integer,)):
+        return int(o)
+    if isinstance(o, (np.ndarray,)):
+        return o.tolist()
+    return str(o)
 
 
 # ---------------------------------------------------------------- strategy details
@@ -618,7 +704,6 @@ def reshuffle():
 def compute_details(btc, cfg):
     try:
         strat = cfg["strategy"]
-        out = {"error": None}
         if strat in ("donchian_is", "tree"):
             win = btc[(btc.index.year >= cfg["is_start"]) & (btc.index.year < cfg["is_end"])]
         elif strat == "donchian_wf":
@@ -627,11 +712,11 @@ def compute_details(btc, cfg):
             win = btc
         if len(win) < 400:
             return {"error": "Window too short — widen the year range."}
+
         c = win["close"].to_numpy()
         lc = np.log(c)
         r = np.empty(len(c)); r[:-1] = np.diff(lc); r[-1] = np.nan
-        overlays = {}
-        extra = {}
+        overlays, extra = {}, {}
 
         if strat == "donchian_is":
             if cfg["turbo"]:
@@ -639,11 +724,15 @@ def compute_details(btc, cfg):
                 extra["opt"] = (lbs, curve, bL)
             else:
                 bL, pf = optimize_donchian(win, cfg["lb_min"], cfg["lb_max"], cfg["lb_step"])
-            sig = breakout_signal_np(c, bL) if bL > 0 else np.full(len(c), np.nan)
-            s = win["close"]
-            overlays[f"Upper · L={bL}"] = (s.rolling(bL - 1).max().shift(1), C["btc2"], "dot")
-            overlays[f"Lower · L={bL}"] = (s.rolling(bL - 1).min().shift(1), C["violet"], "dot")
+            if bL > 1:
+                sig = breakout_signal_np(c, bL)
+                s = win["close"]
+                overlays[f"Channel upper · L={bL}"] = (s.rolling(bL - 1).max().shift(1), C["btc2"], "dot")
+                overlays[f"Channel lower · L={bL}"] = (s.rolling(bL - 1).min().shift(1), C["violet"], "dot")
+            else:
+                sig = np.full(len(c), np.nan)
             extra["best_L"] = bL
+
         elif strat == "donchian_wf":
             tw = cfg["wf_train_years"] * 24 * 365
             tstep = cfg["wf_step_days"] * 24
@@ -651,14 +740,16 @@ def compute_details(btc, cfg):
                 return {"error": "Walk-forward window must exceed the training window."}
             if cfg["turbo"]:
                 sig, choices = walkforward_donch_fast(c, tw, tstep, cfg["lb_min"], cfg["lb_max"], cfg["lb_step"], return_choices=True)
-                extra["wf_choices"] = choices
+                extra["wf_choices"] = [(win.index[min(t, len(win) - 1)], int(b)) for t, b in choices]
             else:
                 sig = walkforward_donch(win, tw, tstep, cfg["lb_min"], cfg["lb_max"], cfg["lb_step"])
+
         elif strat == "tree":
             model = train_tree(win, cfg["tree_leaf"], cfg["tree_depth"])
             sig_s, pf = tree_strategy(win, model)
             sig = sig_s.to_numpy()
             extra["importances"] = model.feature_importances_.tolist()
+
         else:
             sig_s, pf = ma_crossover(win, cfg["ma_fast"], cfg["ma_slow"], cfg["ma_short"])
             sig = sig_s.to_numpy()
@@ -671,38 +762,37 @@ def compute_details(btc, cfg):
         eq = np.nancumsum(rets)
         step = max(1, len(eq) // 2600)
         dd = eq - np.maximum.accumulate(eq)
-        chg = np.flatnonzero((sig[1:] != sig[:-1]) & np.isfinite(sig[1:]) & np.isfinite(sig[:-1])) + 1
-        if len(chg) > 350:
-            chg = chg[:: max(1, len(chg) // 350)]
-        dirs = np.where(sig[chg] > sig[chg - 1], 1.0, -1.0) if len(chg) else np.array([])
+        valid = np.isfinite(sig)
+        chg = np.flatnonzero(valid[1:] & valid[:-1] & (sig[1:] != sig[:-1])) + 1
         daily = win.resample("1D").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
-        dov = {}
-        for name, (ser, col, dash) in overlays.items():
-            dov[name] = (ser.resample("1D").last(), col, dash)
+        dov = {name: (ser.resample("1D").last(), col, dash) for name, (ser, col, dash) in overlays.items()}
         nz = rs.dropna()
         nz = nz[nz != 0]
-        out.update(
-            daily=daily, overlays=dov,
-            markers=(win.index[chg], c[chg], dirs),
+        std = rs.std()
+
+        return dict(
+            error=None, daily=daily, overlays=dov,
             eq_x=win.index[::step], eq=eq[::step], dd=dd[::step],
+            close_ds=c[::step], pos_ds=np.nan_to_num(sig[::step], nan=0.0),
             stats=dict(
-                pf=pf, sharpe=float(rs.mean() / rs.std()) if rs.std() > 0 else float("nan"),
+                pf=pf,
+                sharpe=float(rs.mean() / std) if std and std > 0 else float("nan"),
                 total=float(np.nansum(rets)),
-                exposure=float(np.nanmean(np.abs(sig))) if np.isfinite(sig).any() else 0.0,
+                exposure=float(np.nanmean(np.abs(sig))) if valid.any() else 0.0,
                 trades=int(len(chg)),
                 winrate=float((nz > 0).mean()) if len(nz) else float("nan"),
                 bars=len(win),
             ),
             extra=extra,
         )
-        return out
     except Exception as e:
         return {"error": str(e)}
 
 
 # ---------------------------------------------------------------- anatomy
 @st.cache_data(show_spinner="Shuffling the universe…")
-def anatomy(btc, eth, seed, nlags):
+def anatomy(btc, eth, draw, nlags):
+    seed = ANATOMY_SEED + int(draw)
     yrs = btc.index.year
     sl = btc[(yrs >= 2018) & (yrs < 2020)]
     if len(sl) < 3000:
@@ -730,20 +820,20 @@ def anatomy(btc, eth, seed, nlags):
         x=sl.index[::step], lcr=lcr[::step], lcp=lcp[::step],
         moments=moments, lags=np.arange(nlags + 1),
         ar=ar, ap=ap, aar=aar, aap=aap, n=n,
-        fxr=fxr, pxr=pxr, fxp=fxp, pxp=pxp, corr=None,
+        fxr=fxr, pxr=pxr, fxp=fxp, pxp=pxp, corr=None, span=f"{sl.index[0]:%Y-%m-%d} → {sl.index[-1]:%Y-%m-%d}",
     )
     if eth is not None:
-        e = eth.reindex(sl.index).dropna()
-        common = sl.index.intersection(e.index)
+        common = sl.index.intersection(eth.index)
         if len(common) > 1000:
-            b2 = sl.loc[common]; e2 = e.loc[common]
+            b2 = sl.loc[common]
+            e2 = eth.loc[common]
             pb, pe = get_permutation([b2, e2], seed=seed)
             rb = np.log(b2["close"]).diff().dropna()
             re = np.log(e2["close"]).diff().dropna()
             qb = np.log(pb["close"]).diff().dropna()
             qe = np.log(pe["close"]).diff().dropna()
-            k = min(2600, len(rb))
-            sel = np.linspace(0, len(rb) - 1, k).astype(int)
+            k = min(2600, len(rb), len(qb))
+            sel = np.linspace(0, min(len(rb), len(qb)) - 1, k).astype(int)
             out["corr"] = dict(
                 rb=rb.to_numpy()[sel], re=re.to_numpy()[sel],
                 pb=qb.to_numpy()[sel], pe=qe.to_numpy()[sel],
@@ -752,39 +842,47 @@ def anatomy(btc, eth, seed, nlags):
     return out
 
 
-# ---------------------------------------------------------------- results rendering
+# ---------------------------------------------------------------- results
 def result_body(job, live=False):
     cfg = job["config"]
     done, better = job["done"], job["better"]
     p = better / (done + 1)
     real_pf = job.get("real_pf", float("nan"))
-    n_target = cfg["n_perms"]
+    finite = [v for v in job["perm_pfs"] if np.isfinite(v)]
+    med = float(np.median(finite)) if finite else float("nan")
 
     if not live:
         vlabel, vcls, _ = job.get("verdict", verdict(p))
-        finite = [v for v in job["perm_pfs"] if np.isfinite(v)]
-        med = float(np.median(finite)) if finite else float("nan")
-        lift = real_pf - med if finite else float("nan")
         if vcls == "sig":
             txt = f"Only {better-1} of {done} permuted universes matched or beat the real optimized PF. Selection bias alone rarely explains this — evidence of a genuine, exploitable pattern."
         elif vcls == "weak":
-            txt = f"{better-1} of {done} noise universes beat the real result. Suggestive, not conclusive. More permutations, out-of-sample validation, and economic rationale are warranted."
+            txt = f"{better-1} of {done} noise universes beat the real result. Suggestive, not conclusive. More permutations and out-of-sample validation are warranted."
         else:
             txt = f"{better-1} of {done} structureless universes produced an equally good 'edge'. The optimizer is mining noise — classic data-mining bias. Treat this strategy as unproven."
         st.markdown(
             f'<div class="verdict {vcls}"><span class="big">{"◆ " if vcls=="sig" else "◇ "}{vlabel}</span>'
             f'<span class="txt">{txt}</span></div>', unsafe_allow_html=True)
+
         items = [
-            dict(k="Real Profit Factor", v=f"{real_pf:.4f}", cls=""),
-            dict(k="MCPT p-value", v=f"{p:.3f}", cls="green" if vcls == "sig" else ("red" if vcls == "noise" else ""), d=f"{better} / {done+1} ≥ real", dc="warn"),
-            dict(k="Permutations", v=f"{done:,}", cls="cyan", d=f"target {n_target:,}" + (" · stopped early" if job["status"] == "stopped" else "")),
+            dict(k="Real Profit Factor", v=f"{real_pf:.4f}" if np.isfinite(real_pf) else "—"),
+            dict(k="MCPT p-value", v=f"{p:.3f}",
+                 cls="green" if vcls == "sig" else ("red" if vcls == "noise" else ""),
+                 d=f"{better} / {done+1} ≥ real", dc="warn"),
+            dict(k="Permutations", v=f"{done:,}", cls="cyan",
+                 d=f"target {cfg['n_perms']:,}" + (" · stopped early" if job["status"] == "stopped" else "")),
         ]
-        if job.get("best_lookback"):
-            items.append(dict(k="Best Lookback", v=str(job["best_lookback"]), cls="cyan", d="selected on real bars"))
         if finite:
-            items.append(dict(k="Edge vs noise median", v=f"{lift:+.4f}", cls="green" if lift > 0 else "red", d=f"noise median {med:.4f}", dc="up" if lift > 0 else "dn"))
-        items.append(dict(k="Elapsed", v=fmt_t(job.get("elapsed", 0)), cls="cyan", d=job.get("finished_at", "")))
+            lift = real_pf - med
+            items.append(dict(k="Edge vs noise median", v=f"{lift:+.4f}",
+                              cls="green" if lift > 0 else "red",
+                              d=f"noise median {med:.4f}", dc="up" if lift > 0 else "dn"))
         st.markdown(cards_html(items), unsafe_allow_html=True)
+        meta = [f"elapsed {fmt_t(job.get('elapsed',0))}"]
+        if job.get("best_lookback") and job["best_lookback"] > 0:
+            meta.append(f"selected lookback {job['best_lookback']}")
+        if job.get("finished_at"):
+            meta.append(job["finished_at"])
+        st.caption(" · ".join(meta))
 
     colA, colB = st.columns([1.35, 1])
     with colA:
@@ -800,56 +898,56 @@ def result_body(job, live=False):
         mean = np.where(cnt > 0, job["env_sum"] / np.maximum(cnt, 1), np.nan)
         var = np.where(cnt > 0, job["env_ssq"] / np.maximum(cnt, 1) - mean**2, np.nan)
         std = np.sqrt(np.maximum(var, 0))
-        show_fig(optcurve_fig(job["lookbacks"], job["pf_curve"], job.get("best_lookback"), mean, std), key=f"opt_{job['id']}_{live}")
-        st.caption("The amber curve is the real optimization surface; the cyan/violet envelope is what the same optimizer achieves on pure noise. The gap between them — not the peak itself — is the evidence.")
+        show_fig(optcurve_fig(job["lookbacks"], job["pf_curve"], job.get("best_lookback"), mean, std),
+                 key=f"opt_{job['id']}_{live}")
+        st.caption("Amber = the real optimization surface. Cyan/violet = what the same optimizer achieves on pure noise. The gap between them — not the peak itself — is the evidence.")
 
     if job.get("wf_choices"):
-        ch = job["wf_choices"]
-        fig = base_fig(240, "Walk-forward — lookback re-selected at each training step")
-        fig.add_trace(go.Scatter(x=[job["curve_x"][0]] + [job["curve_x"][min(t, len(job['curve_x'])-1)] for t, _ in ch],
-                                 y=[ch[0][1]] + [b for _, b in ch], mode="lines",
-                                 line=dict(color=C["magenta"], width=2, shape="hv"), name="Chosen lookback"))
-        show_fig(fig, key=f"wfch_{job['id']}")
+        show_fig(choices_fig(job["wf_choices"]), key=f"wfch_{job['id']}_{live}")
+
+    if job.get("importances"):
+        show_fig(imp_fig(job["importances"]), key=f"imp_{job['id']}_{live}")
 
     if not live:
-        with st.expander("⚠ What this null hypothesis does — and does not — rule out"):
+        with st.expander("What this null hypothesis does — and does not — rule out"):
             st.markdown(
                 "Bar permutation preserves the **marginal distribution** (mean, std, skew, kurtosis), intrabar geometry and gaps, "
                 "but destroys **volatility clustering**, **long memory**, **self-similarity** and spectral structure — anything involving dependence. "
-                "A strategy that unknowingly harvests volatility clustering is being tested against a null where that property is absent; "
-                "a significant p-value here means the edge needs *serial structure*, not merely fat tails. "
-                "Conversely, a non-significant result does not prove absence of every conceivable edge — only that this pipeline cannot distinguish itself from shuffled noise."
+                "A strategy that unknowingly harvests volatility clustering is tested against a null where that property is absent; "
+                "a significant p-value then means the edge needs *serial structure*, not merely fat tails. "
+                "A non-significant result does not disprove every conceivable edge — only that this pipeline cannot distinguish itself from shuffled noise. "
+                "All results are gross of fees, slippage and funding."
             )
         e1, e2, e3 = st.columns(3)
         payload = dict(
             id=job["id"], label=job["label"], config=cfg, real_pf=real_pf,
             p_value=p, better=better, completed=done,
             best_lookback=job.get("best_lookback"),
-            perm_pfs=job["perm_pfs"], finished_at=job.get("finished_at"),
+            perm_pfs=[v if np.isfinite(v) else None for v in job["perm_pfs"]],
+            finished_at=job.get("finished_at"), built_by=AUTHOR,
         )
-        e1.download_button("⬇ Results (.json)", json.dumps(payload, default=lambda o: float(o) if isinstance(o, (np.floating, np.integer)) else str(o), indent=2),
+        e1.download_button("⬇ Results (.json)", json.dumps(payload, default=json_safe, indent=2),
                            file_name=f"mcpt_{job['id']}.json", mime="application/json", key=f"js_{job['id']}")
-        e2.download_button("⬇ Permuted PFs (.csv)", "perm_pf\n" + "\n".join(f"{v:.6f}" for v in job["perm_pfs"]),
+        e2.download_button("⬇ Permuted PFs (.csv)",
+                           "perm_pf\n" + "\n".join(f"{v:.6f}" if np.isfinite(v) else "" for v in job["perm_pfs"]),
                            file_name=f"perm_pfs_{job['id']}.csv", mime="text/csv", key=f"csv_{job['id']}")
-        e3.button("↻ Re-run with current settings", on_click=start_run, key=f"re_{job['id']}")
+        e3.button("↻ Re-run current settings", on_click=start_run, key=f"re_{job['id']}")
 
 
 def onboarding():
     st.markdown(
         """
 <div class="panel">
-  <h3>Arm the test — is your optimized edge real, or the best-looking lie in 157 tries?</h3>
-  <div style="color:var(--muted);font-size:.88rem;max-width:860px">
-    Optimization <b style="color:var(--btc2)">always</b> induces data-mining bias. PERMUTLAB rebuilds the market as
-    structureless noise — same distribution, zero memory — re-runs your <i>entire</i> pipeline on each shuffled universe,
-    and asks how often noise alone beats your real result. Aim for <b style="color:var(--cyan)">1000 permutations</b>.
-  </div>
+  <h3>Is your optimized edge real — or the best-looking lie in 157 tries?</h3>
+  <p>Optimization <b style="color:var(--btc2)">always</b> induces data-mining bias. This terminal rebuilds the market as
+  structureless noise — same distribution, zero memory — re-runs your <i>entire</i> pipeline on each shuffled universe,
+  and asks how often noise alone beats your real result. Aim for <b style="color:var(--cyan)">1000 permutations</b>.</p>
   <div class="steps">
     <div class="step"><div class="n">01</div><div class="h">Optimize on real bars</div><div class="b">Donchian lookback sweep, walk-forward re-training, decision tree, or MA crossover — the full selection procedure, bias included.</div></div>
     <div class="step"><div class="n">02</div><div class="h">Shuffle 1000 universes</div><div class="b">Intrabar shape and gaps permuted separately. Mean/std/skew/kurt survive; volatility clustering and long memory die.</div></div>
     <div class="step"><div class="n">03</div><div class="h">Compare &amp; verdict</div><div class="b">p = (1 + #noise-PF ≥ real-PF) / N. If noise matches your edge, the edge is a mirage. Watch the histogram build live.</div></div>
   </div>
-  <div class="callout" style="margin-top:.9rem"><b>→ Pick a strategy and press RUN MCPT in the sidebar.</b> The Turbo engine streams results as they compute; Stop anytime.</div>
+  <div class="callout" style="margin-top:.85rem"><b>→ Upload Currency 1 in the sidebar, pick a pipeline, press RUN PERMUTATION TEST.</b> Results stream as they compute; stop anytime. Each pipeline's mechanics, strengths and weaknesses are in Method &amp; Guide.</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -860,31 +958,26 @@ def live_fragment():
     if job is None or job.get("status") != "running":
         st.rerun(scope="app")
         return
-    if job["status"] == "error":
-        finalize(job)
-        st.rerun(scope="app")
-        return
     cfg = job["config"]
     n_target = cfg["n_perms"]
     done = job["done"]
     elapsed = time.time() - job["start"]
     eta = (elapsed / done) * (n_target - 1 - done) if done > 0 else None
-    prog = done / max(n_target - 1, 1)
-    st.progress(min(prog, 1.0))
+    st.progress(min(done / max(n_target - 1, 1), 1.0))
     p = job["better"] / (done + 1)
     c1, c2 = st.columns([4, 1])
     with c1:
         st.markdown(cards_html([
             dict(k="Phase", v="⚙ LIVE", cls="cyan", d=job.get("phase", "")),
             dict(k="Completed", v=f"{done:,}", d=f"of {n_target-1:,} permutations"),
-            dict(k="Noise beats real", v=str(job["better"] - 1), cls="red" if job["better"] - 1 > done * .2 else "green", d="count ≥ real PF", dc="warn"),
-            dict(k="Live p-value", v=f"{p:.3f}", cls="cyan"),
-            dict(k="Elapsed / ETA", v=fmt_t(elapsed), cls="cyan", d=f"≈ {fmt_t(eta)} left" if eta is not None else "measuring…"),
+            dict(k="Noise beats real", v=str(job["better"] - 1),
+                 cls="red" if job["better"] - 1 > max(done, 1) * .2 else "green", d="count ≥ real PF", dc="warn"),
+            dict(k="Live p-value", v=f"{p:.3f}", cls="cyan",
+                 d=f"{fmt_t(elapsed)} elapsed" + (f" · ≈{fmt_t(eta)} left" if eta is not None else "")),
         ]), unsafe_allow_html=True)
     with c2:
-        st.markdown("<div style='height:.6rem'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:.55rem'></div>", unsafe_allow_html=True)
         st.button("■ STOP", on_click=request_stop, key="stop_btn", use_container_width=True)
-        st.caption(f"seed {cfg['seed']} · {'turbo' if cfg['turbo'] else 'reference'}")
     if np.isfinite(job.get("real_pf", float("nan"))):
         result_body(job, live=True)
     else:
@@ -918,31 +1011,46 @@ def history_block():
 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.markdown('<div class="sb-logo">PERMUT<em>LAB</em></div><div class="sb-tag">MCPT RESEARCH TERMINAL</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sb-logo">Permutation Tests<em>Trading Strategies</em></div>'
+        f'<div class="sb-tag">BUILT BY {AUTHOR.upper()}</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sb-sec">01 · Market feed</div>', unsafe_allow_html=True)
-    source = st.selectbox("Data source", ["Auto-detect files", "Synthetic demo feed", "Upload files"], key="w_source")
-    up_btc = up_eth = None
+    st.markdown('<div class="sb-sec">01 · Data</div>', unsafe_allow_html=True)
+    src_options = ["Upload files"]
+    if Path("BTCUSD3600.pq").exists():
+        src_options.append("Local BTCUSD3600.pq")
+    src_options.append("Synthetic demo feed")
+    source = st.selectbox("Source", src_options, index=0, key="w_source")
+
+    up1 = up2 = None
     if source == "Upload files":
-        up_btc = st.file_uploader("BTCUSD hourly (.pq / .parquet / .csv)", type=["pq", "parquet", "csv"], key="up_btc")
-        up_eth = st.file_uploader("ETHUSD hourly (optional, for correlation demo)", type=["pq", "parquet", "csv"], key="up_eth")
+        up1 = st.file_uploader("Currency 1 hourly (.pq / .parquet / .csv)",
+                               type=["pq", "parquet", "csv"], key="up_1")
+        with st.expander("Optional · second currency"):
+            up2 = st.file_uploader("Currency 2 hourly (optional for correlation)",
+                                   type=["pq", "parquet", "csv"], key="up_2")
 
+    notice = None
     try:
-        btc_df, eth_df, src_label = resolve_data(source, up_btc, up_eth)
+        btc_df, eth_df, src_label, notice = resolve_data(source, up1, up2)
         data_err = None
     except Exception as e:
         btc_df, eth_df = synth_pair()
-        src_label, data_err = "SYNTHETIC (parse failed)", str(e)
+        src_label, data_err, notice = "DEMO FEED", str(e), None
     st.session_state["btc_df"] = btc_df
     st.session_state["eth_df"] = eth_df
     if data_err:
         st.error(data_err)
+    if notice:
+        st.caption(notice)
     ymin = int(btc_df.index.year.min())
     ymax = int(btc_df.index.year.max()) + 1
-    st.caption(f"{src_label} · {len(btc_df):,} hourly bars · {ymin}–{ymax-1}")
+    st.caption(f"{src_label} · {len(btc_df):,} bars · {ymin}–{ymax-1}" +
+               (" · currency 2 loaded" if eth_df is not None else ""))
 
-    st.markdown('<div class="sb-sec">02 · Strategy</div>', unsafe_allow_html=True)
-    strategy = st.selectbox("Pipeline under test", list(STRAT_LABELS.keys()), format_func=lambda k: STRAT_LABELS[k], key="w_strategy")
+    st.markdown('<div class="sb-sec">02 · Pipeline</div>', unsafe_allow_html=True)
+    strategy = st.selectbox("Strategy under test", list(STRAT_LABELS.keys()),
+                            format_func=lambda k: STRAT_LABELS[k], key="w_strategy")
 
     if strategy in ("donchian_is", "donchian_wf"):
         ca, cb = st.columns(2)
@@ -950,46 +1058,39 @@ with st.sidebar:
         cb.slider("Lookback max", 60, 240, 168, key="w_lbmax")
         st.slider("Grid step", 1, 12, 1, key="w_lbstep")
     if strategy in ("donchian_is", "tree"):
+        sanitize_range("w_is_years", ymin, ymax)
         d0 = (max(ymin, min(2016, ymax - 1)), min(ymax, max(2020, ymin + 1)))
-        if d0[0] >= d0[1]:
-            d0 = (ymin, ymax)
         st.slider("Training years (end exclusive)", ymin, ymax, d0, key="w_is_years")
     if strategy == "donchian_wf":
-        d1 = (ymin, ymax)
-        st.slider("Walk-forward years", ymin, ymax, d1, key="w_wf_years")
+        sanitize_range("w_wf_years", ymin, ymax)
+        st.slider("Walk-forward years", ymin, ymax, (ymin, ymax), key="w_wf_years")
         st.slider("Training window (years)", 1, 4, 4, key="w_wf_train")
         st.slider("Re-optimize every (days)", 5, 90, 30, key="w_wf_step")
     if strategy == "tree":
         st.slider("min_samples_leaf", 1, 100, 5, key="w_leaf")
-        st.selectbox("max_depth", ["Unlimited", 4, 6, 8, 12], key="w_depth")
+        st.selectbox("max_depth", ["Unlimited", 4, 6, 8, 12], format_func=str, key="w_depth")
     if strategy == "ma":
         ca, cb = st.columns(2)
         ca.slider("Fast MA", 2, 60, 10, key="w_maf")
         cb.slider("Slow MA", 10, 240, 30, key="w_mas")
         st.toggle("Allow shorts (else long/flat)", key="w_mashort")
+        if int(st.session_state.get("w_maf", 10)) >= int(st.session_state.get("w_mas", 30)):
+            st.caption("⚠ Fast MA must be shorter than slow MA.")
 
     st.markdown('<div class="sb-sec">03 · Permutation engine</div>', unsafe_allow_html=True)
     st.slider("Permutations — aim for 1000", 50, 2000, 1000, step=50, key="w_perms")
-    pa, pb = st.columns(2)
-    pa.button("⚡ Quick · 200", on_click=preset_quick, use_container_width=True)
-    pb.button("🎯 Research · 1000", on_click=preset_full, use_container_width=True)
-    sa, sb = st.columns([3, 1])
-    sa.number_input("Master seed", 0, 2**31 - 4096, 69, key="w_seed")
-    sb.markdown("<div style='height:1.62rem'></div>", unsafe_allow_html=True)
-    sb.button("🎲", on_click=randomize_seed, help="Randomize seed", use_container_width=True)
     st.toggle("Turbo engine (vectorized, identical math)", value=True, key="w_turbo")
     if strategy == "donchian_wf":
-        st.caption("Walk-forward re-optimizes inside every permutation — the heaviest test. Turbo strongly recommended; 200 perms is a sane first pass.")
-    elif not st.session_state.get("w_turbo", True):
-        st.caption("Reference engine runs the literal pandas loops — expect long runtimes at 1000 permutations.")
+        st.caption("Walk-forward re-optimizes inside every permutation — the heaviest test. Turbo recommended.")
 
     st.markdown('<div class="sb-sec">04 · Execute</div>', unsafe_allow_html=True)
     active = st.session_state.get("active")
     running = bool(active and active.get("status") == "running")
-    st.button("🧪 RUN MCPT", type="primary", on_click=start_run, disabled=running, use_container_width=True)
+    st.button("🧪 RUN PERMUTATION TEST", type="primary", on_click=start_run,
+              disabled=running, use_container_width=True)
     st.button("Clear results", on_click=clear_active, disabled=running, use_container_width=True)
     if running:
-        st.caption(f"● running — {active['done']:,} / {active['config']['n_perms']-1:,} permutations")
+        st.caption(f"● running — {active['done']:,} / {active['config']['n_perms']-1:,}")
     if st.session_state.get("run_error"):
         st.error(st.session_state["run_error"])
 
@@ -999,45 +1100,43 @@ cfg_now = collect_cfg()
 st.markdown(
     f"""
 <div class="hero">
-  <div><span class="pulse"></span><span class="tape">BTCUSD · 1H · MONTE CARLO PERMUTATION TESTING</span></div>
-  <h1>PERMUT<span class="grad">LAB</span></h1>
+  <div><span class="pulse"></span><span class="tape">MONTE CARLO PERMUTATION TESTING · HOURLY OHLC</span></div>
+  <h1>Permutation Tests<span class="grad">Trading Strategies</span></h1>
   <div class="sub">Optimization always induces <b>data-mining bias</b>. A good strategy exploits a <b>real market pattern</b>.
   This terminal re-runs your fully-optimized pipeline on <b>1000 shuffled universes</b> — same distribution, zero memory — and measures how often noise alone beats you.</div>
   <div class="chips">
     <span class="chip hot">FEED <b>{src_label}</b></span>
     <span class="chip">BARS <b>{len(btc_df):,}</b></span>
-    <span class="chip">PIPELINE <b>{STRAT_LABELS[cfg_now['strategy']]}</b></span>
     <span class="chip cool">N <b>{cfg_now['n_perms']:,}</b></span>
-    <span class="chip">SEED <b>{cfg_now['seed']}</b></span>
-    <span class="chip cool">ENGINE <b>{'TURBO' if cfg_now['turbo'] else 'REFERENCE'}</b></span>
+    <span class="chip">BUILT BY <b>{AUTHOR}</b></span>
   </div>
   <div class="hairline"></div>
 </div>
 """, unsafe_allow_html=True)
 
 tab_lab, tab_strat, tab_anat, tab_method = st.tabs(
-    ["🧪 PERMUTATION LAB", "📈 STRATEGY", "🔬 PERMUTATION ANATOMY", "📚 METHOD & CODE"]
+    ["PERMUTATION LAB", "STRATEGY", "PERMUTATION ANATOMY", "METHOD & GUIDE"]
 )
 
 # ---------------------------------------------------------------- LAB
 with tab_lab:
     active = st.session_state.get("active")
     if active and active.get("status") == "running":
-        sec("L", f"Live run · {active['label']} · {active.get('window_desc','')}")
+        sec("L", f"Live · {active['label']}")
         live_fragment()
     elif active is None:
         onboarding()
         history_block()
     elif active.get("status") == "error":
         sec("E", "Run failed")
-        st.error(active.get("error", "Unknown error"))
-        st.code(active.get("error", ""), language="text")
+        st.error(active.get("error", "Unknown error").strip().splitlines()[-1])
+        with st.expander("Traceback"):
+            st.code(active.get("error", ""), language="text")
         history_block()
     else:
-        sec("R", f"Results · {active['label']} · {active.get('window_desc','')}")
+        sec("R", f"Results · {active['label']}")
         st.markdown(
             f'<div class="chips"><span class="chip hot">{active["label"]}</span>'
-            f'<span class="chip">seed <b>{active["config"]["seed"]}</b></span>'
             f'<span class="chip">engine <b>{"turbo" if active["config"]["turbo"] else "reference"}</b></span>'
             f'<span class="chip cool">{active.get("window_desc","")}</span>'
             f'<span class="chip">status <b>{active["status"].upper()}</b></span></div>',
@@ -1047,62 +1146,69 @@ with tab_lab:
 
 # ---------------------------------------------------------------- STRATEGY
 with tab_strat:
-    sec("S", f"Strategy anatomy · {STRAT_LABELS[cfg_now['strategy']]}")
+    sec("S", f"Strategy · {STRAT_LABELS[cfg_now['strategy']]}")
+    c1, c2, c3 = st.columns([1, 1, 2.2])
+    style = c1.selectbox("Price panel", ["Candles", "Line"], key="w_price_style")
+    show_ov = c2.toggle("Show indicator overlay", value=True, key="w_show_ov")
+    c3.markdown(
+        '<div class="callout" style="margin:.2rem 0">Price, position, equity and drawdown are drawn as '
+        '<b>separate panels</b> — indicators stay on price, turns stay in the position lane.</div>',
+        unsafe_allow_html=True)
+
     det = compute_details(btc_df, cfg_now)
     if det.get("error"):
         st.warning(det["error"])
     else:
         s = det["stats"]
         st.markdown(cards_html([
-            dict(k="Profit Factor", v=f"{s['pf']:.4f}", cls="" if s['pf'] >= 1 else "red"),
-            dict(k="Sharpe (hourly)", v=f"{s['sharpe']:.4f}", cls="cyan"),
+            dict(k="Profit Factor", v=f"{s['pf']:.4f}" if np.isfinite(s['pf']) else "—",
+                 cls="" if s['pf'] >= 1 else "red"),
+            dict(k="Sharpe (hourly)", v=f"{s['sharpe']:.4f}" if np.isfinite(s['sharpe']) else "—", cls="cyan"),
             dict(k="Σ Log Return", v=f"{s['total']:+.3f}", cls="green" if s['total'] > 0 else "red"),
             dict(k="Exposure", v=f"{s['exposure']:.0%}", cls="cyan"),
-            dict(k="Position changes", v=f"{s['trades']:,}", cls="cyan"),
-            dict(k="Bar win-rate", v=f"{s['winrate']:.1%}", cls=""),
+            dict(k="Position changes", v=f"{s['trades']:,}", cls="cyan", d=f"{s['bars']:,} bars"),
         ]), unsafe_allow_html=True)
-        title = "Daily candles · channel · position turns" if cfg_now["strategy"] == "donchian_is" else \
-                "Daily candles · position turns" if cfg_now["strategy"] != "ma" else \
-                "Daily candles · moving averages · position turns"
-        show_fig(candle_fig(det["daily"], det["overlays"], det["markers"], title), key="candles")
-        ce, cd = st.columns([1.6, 1])
+
+        ov_names = list(det["overlays"].keys())
+        price_title = "Price panel" + (" · " + " / ".join(ov_names) if (show_ov and ov_names) else "")
+        show_fig(price_fig(det, style, show_ov, price_title), key="s_price")
+        show_fig(position_fig(det["eq_x"], det["pos_ds"]), key="s_pos")
+
+        ce, cd = st.columns([1.5, 1])
         with ce:
-            show_fig(equity_fig(det["eq_x"], det["eq"], [], "Strategy equity — cumulative log return (hourly)"), key="seq")
+            show_fig(equity_fig(det["eq_x"], det["eq"], [], "Equity — cumulative log return"), key="s_eq")
         with cd:
-            show_fig(dd_fig(det["eq_x"], det["dd"]), key="sdd")
+            show_fig(dd_fig(det["eq_x"], det["dd"]), key="s_dd")
+
         ex = det["extra"]
         if "opt" in ex:
             lbs, curve, bL = ex["opt"]
-            show_fig(optcurve_fig(lbs, curve, bL), key="sopt")
-            st.caption(f"Best lookback on real bars: **{bL}**. This peak is exactly what MCPT must justify — the Strategy tab shows the claim; the Lab renders the verdict.")
+            show_fig(optcurve_fig(lbs, curve, bL), key="s_opt")
+            st.caption(f"Best lookback on real bars: **{bL}**. This peak is the claim; the Permutation Lab renders the verdict.")
         if "wf_choices" in ex:
-            ch = ex["wf_choices"]
-            fig = base_fig(240, "Walk-forward — lookback chosen at each re-training")
-            xs = [btc_df.index[min(t, len(btc_df)-1)] for t, _ in ch]
-            fig.add_trace(go.Scatter(x=xs, y=[b for _, b in ch], mode="lines",
-                                     line=dict(color=C["magenta"], width=2, shape="hv"), name="Chosen lookback"))
-            show_fig(fig, key="swf")
+            show_fig(choices_fig(ex["wf_choices"]), key="s_wf")
         if "importances" in ex:
-            show_fig(imp_fig(ex["importances"]), key="simp")
+            show_fig(imp_fig(ex["importances"]), key="s_imp")
 
 # ---------------------------------------------------------------- ANATOMY
 with tab_anat:
     sec("A", "What permutation preserves — and what it kills")
-    ca, cb, cc = st.columns([1, 1, 2])
-    ca.number_input("Anatomy seed", 0, 2**31 - 1, 42, key="w_anat_seed")
-    cb.markdown("<div style='height:1.62rem'></div>", unsafe_allow_html=True)
-    cb.button("🔀 Reshuffle", on_click=reshuffle, use_container_width=True)
-    nlags = cc.slider("ACF lags (hours)", 48, 336, 168, key="w_lags")
-    an = anatomy(btc_df, eth_df, int(st.session_state.get("w_anat_seed", 42)), nlags)
+    ca, cb = st.columns([1, 3])
+    cb.button("🔀 Draw a new permutation", on_click=new_permutation_draw)
+    nlags = ca.slider("ACF lags (hours)", 48, 336, 168, key="w_lags")
+    an = anatomy(btc_df, eth_df, int(st.session_state.get("anat_draw", 0)), nlags)
+    st.caption(f"Sample window {an['span']} · seeds are fixed internally for reproducibility.")
 
     col1, col2 = st.columns([1.5, 1])
     with col1:
-        fig = base_fig(360, "One real market vs one permuted universe (log price, rebased)")
+        fig = base_fig(350, "One real market vs one permuted universe (log price, rebased)")
         fig.add_trace(go.Scatter(x=an["x"], y=an["lcr"], mode="lines", line=dict(color=C["btc"], width=2), name="Real"))
         fig.add_trace(go.Scatter(x=an["x"], y=an["lcp"], mode="lines", line=dict(color=C["cyan"], width=1.6), name="Permuted"))
         show_fig(fig, key="an_price")
     with col2:
-        st.markdown('<div class="panel"><h3>Marginal distribution — preserved</h3><div style="color:var(--muted);font-size:.8rem">Shuffling rearranges bars; it cannot change the histogram of returns. Moments match to sampling noise.</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel"><h3>Marginal distribution — preserved</h3>'
+                    '<p>Shuffling rearranges bars; it cannot change the histogram of returns. Moments match to sampling noise.</p></div>',
+                    unsafe_allow_html=True)
         st.table(an["moments"].style.format("{:.6f}"))
 
     c1, c2 = st.columns(2)
@@ -1110,33 +1216,31 @@ with tab_anat:
         show_fig(acf_fig(an["lags"], an["ar"], an["ap"], an["n"], "ACF of returns — linear dependence"), key="an_acf_r")
     with c2:
         show_fig(acf_fig(an["lags"], an["aar"], an["aap"], an["n"], "ACF of |returns| — volatility clustering"), key="an_acf_a")
-    st.caption("Dashed lines: ±1.96/√n white-noise bounds. Real |returns| stay correlated for days (volatility clustering); the permuted series collapses to the bounds immediately. Any strategy silently leaning on that clustering interacts with this null.")
+    st.caption("Dashed lines: ±1.96/√n white-noise bounds. Real |returns| stay correlated for days; the permuted series collapses to the bounds immediately.")
 
     show_fig(spec_fig(an["fxr"], an["pxr"], an["fxp"], an["pxp"]), key="an_spec")
-    st.caption("Frequency domain: real |returns| show a slow low-frequency decay — the spectral signature of long memory / self-similarity. Permutation flattens it. Distribution survives; dependence does not.")
+    st.caption("Real |returns| show a slow low-frequency decay — the spectral signature of long memory / self-similarity. Permutation flattens it.")
 
     if an["corr"]:
         cr = an["corr"]
         show_fig(corr_fig(cr["rb"], cr["re"], cr["pb"], cr["pe"], cr["rho_r"], cr["rho_p"]), key="an_corr")
-        st.caption("Joint permutation applies the *same* shuffle to both markets, so contemporaneous BTC–ETH correlation survives while each market's serial structure dies — the correct null for multi-asset pipelines.")
+        st.caption("Joint permutation applies the same shuffle to both currencies, so contemporaneous correlation survives while each market's serial structure dies.")
     else:
-        st.info("Load ETHUSD3600.pq (or upload it) to see the joint-permutation correlation demo.")
+        st.info("Load Currency 2 to see the joint-permutation correlation demo.")
 
-# ---------------------------------------------------------------- METHOD & CODE
+# ---------------------------------------------------------------- METHOD & GUIDE
 with tab_method:
     sec("M", "The logic of the test")
     st.markdown(
         """
 <div class="panel">
 <h3>Why permutation testing?</h3>
-<div style="color:var(--muted);font-size:.9rem;line-height:1.7">
-Using the best version of a strategy <b style="color:var(--text)">requires optimization</b> — and optimization
-<b style="color:var(--btc2)">always induces data-mining bias</b>: pick the best of 157 lookbacks and the winner's PF is inflated by selection alone.
-A good strategy finds and exploits a <b style="color:var(--text)">real, repeatable pattern</b> in the market. The question is whether your pipeline's result
-is distinguishable from what the <i>same pipeline</i> achieves on data with no pattern at all.<br><br>
-MCPT builds that null by shuffling bars, then re-runs the <b style="color:var(--cyan)">entire procedure — optimization included —</b> on every permuted universe.
-If the optimized strategy performs just as well on noise, it is likely overfitting the real data. <b style="color:var(--cyan)">Aim for 1000 permutations.</b>
-</div>
+<p>Using the best version of a strategy <b style="color:var(--text)">requires optimization</b> — and optimization
+<b style="color:var(--btc2)">always induces data-mining bias</b>: pick the best of 157 lookbacks and the winner's profit factor is inflated by selection alone.
+A good strategy finds and exploits a <b style="color:var(--text)">real, repeatable pattern</b>. The question is whether your pipeline's result is
+distinguishable from what the <i>same pipeline</i> achieves on data with no pattern at all.</p>
+<p>MCPT builds that null by shuffling bars, then re-runs the <b style="color:var(--cyan)">entire procedure — optimization included —</b> on every permuted universe.
+If the optimized strategy performs just as well on noise, it is likely overfitting the real data. <b style="color:var(--cyan)">Aim for 1000 permutations.</b></p>
 </div>
 """, unsafe_allow_html=True)
     st.latex(r"p \;=\; \frac{1 \;+\; \#\{\,PF^{\,perm} \;\ge\; PF^{\,real}\,\}}{N_{perm}}")
@@ -1148,12 +1252,12 @@ If the optimized strategy performs just as well on noise, it is likely overfitti
   <div class="pd keep"><h4>✓ PRESERVED by bar permutation</h4><ul>
     <li><b>Marginal distribution</b> of returns — mean, std, skew, kurtosis</li>
     <li><b>Intrabar geometry</b> — high/low/close relative to open, shuffled jointly</li>
-    <li><b>Gap distribution</b> — close→open jumps, shuffled separately</li>
-    <li><b>Cross-market correlation</b> — when markets are permuted jointly with the same indices</li>
+    <li><b>Gap distribution</b> — close-to-open jumps, shuffled separately</li>
+    <li><b>Cross-market correlation</b> — when currencies are permuted jointly</li>
     <li><b>Real history before start_index</b> — walk-forward permutes only the OOS region</li>
   </ul></div>
   <div class="pd kill"><h4>✕ DESTROYED by bar permutation</h4><ul>
-    <li><b>Volatility clustering</b> — significant serial correlation of absolute returns</li>
+    <li><b>Volatility clustering</b> — serial correlation of absolute returns</li>
     <li><b>Long memory</b> — slow decay of dependency over longer lags</li>
     <li><b>Self-similarity</b> and fractal scaling across horizons</li>
     <li><b>Frequency-domain structure</b> — the spectrum of |returns| flattens</li>
@@ -1161,10 +1265,132 @@ If the optimized strategy performs just as well on noise, it is likely overfitti
   </ul></div>
 </div>
 <div class="callout"><b>Know your null.</b> Your strategy may interact with these properties even if you are unaware of it.
-A vol-harvesting rule tested against shuffled bars is tested against a world where vol clustering does not exist —
-significance then means the edge requires <i>serial structure</i>, not just fat tails. Interpret p-values with the destroyed properties in mind.</div>
-<div class="callout" style="border-left-color:var(--cyan)"><b>Walk-forward variant.</b> Permutation starts at <code>start_index = train_window</code>, keeping the first training block real,
-and the optimizer re-trains inside every permutation — so the test prices in the full re-selection procedure, not a frozen parameter set.</div>
+A volatility-harvesting rule tested against shuffled bars is tested against a world where volatility clustering does not exist —
+significance then means the edge requires <i>serial structure</i>, not just fat tails.</div>
+""", unsafe_allow_html=True)
+
+    sec("P", "Every pipeline — how it works, strengths, weaknesses")
+    st.markdown(
+        """
+<div class="strat-block">
+  <div class="hd"><span class="nm">1 · Donchian Breakout — In-Sample (optimized)</span><span class="tagline">TREND / BREAKOUT · 1 PARAMETER SWEPT</span></div>
+  <ol>
+    <li>Build the channel from the <b>prior L−1 closes</b>: upper = rolling max, lower = rolling min, both <b>shifted one bar</b> so the current close never enters its own channel.</li>
+    <li>Close above upper → position <b>+1</b>. Close below lower → position <b>−1</b>. Otherwise <b>hold</b> the previous position (forward-fill) until the opposite break.</li>
+    <li>Earn the next bar's log return: <code>signal × (log close[t+1] − log close[t])</code>.</li>
+    <li>Sweep every lookback in the grid (default 12…168) and keep the <b>highest profit factor</b> on that same data. That selection step is the bias MCPT must price.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Captures the fat-tailed trending regimes crypto actually produces</li>
+      <li>One transparent parameter; no fitting of thresholds or weights</li>
+      <li>Always in the market, so it cannot miss a violent breakout</li>
+      <li>Channel is causal — no look-ahead in the signal construction</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li><b>Maximum selection bias</b>: the best of ~157 tries is an upper bound, not an estimate</li>
+      <li>PF-vs-lookback surface is spiky; the winner is often unstable</li>
+      <li>Whipsaws badly in ranges; no stop, no sizing, no volatility scaling</li>
+      <li>Gross of fees, slippage and funding — turnover is high</li>
+    </ul></div>
+  </div>
+  <div class="ask">MCPT asks: does the <i>whole sweep</i> find lookbacks this good on shuffled bars? The noise envelope under the amber curve is the answer.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">2 · Donchian Breakout — Walk-Forward</span><span class="tagline">SAME RULE · RE-OPTIMIZED OUT OF SAMPLE</span></div>
+  <ol>
+    <li>Reserve a training window (default <b>4 years = 35,040 hourly bars</b>). Nothing before it is traded.</li>
+    <li>At each step, run the full lookback sweep <b>only on the trailing training window</b>, then apply that lookback to the next <b>30 days</b> of unseen bars.</li>
+    <li>Roll forward by the step and repeat; stitch the out-of-sample segments into one equity curve.</li>
+    <li>For MCPT, permutation starts at <code>start_index = train_window</code> — the first training block stays real, and the <b>re-optimization runs inside every permutation</b>.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Honest out-of-sample estimate: parameters never see the bars they trade</li>
+      <li>Adapts as regimes change instead of freezing one lucky lookback</li>
+      <li>Tests the <b>procedure</b>, which is what you would actually deploy</li>
+      <li>Selection bias is reduced and, crucially, still measured</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li>Bias is reduced, not removed — each window still picks a winner</li>
+      <li>Parameter churn adds turnover and instability</li>
+      <li>Far more compute: one full sweep per step, per permutation</li>
+      <li>Shorter traded sample → wider uncertainty; a dead training regime misleads the next step</li>
+    </ul></div>
+  </div>
+  <div class="ask">MCPT asks: does the adaptive procedure beat noise when the noise is re-optimized the same way? This is the strongest of the four tests.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">3 · Decision Tree Classifier</span><span class="tagline">NON-LINEAR MOMENTUM · SUPERVISED</span></div>
+  <ol>
+    <li>Features per bar: <b>6h, 24h and 168h log-return differences</b> — short, daily and weekly momentum.</li>
+    <li>Label: sign of the <b>next 24 hours</b>, mapped from {−1, +1} to {0, 1}. Rows with incomplete history or future are dropped.</li>
+    <li>Fit <code>DecisionTreeClassifier(min_samples_leaf=5)</code>, unlimited depth by default — it can carve the feature space until leaves are nearly pure.</li>
+    <li>Predict 1 → long, 0 → short; always in the market; scored on the next <b>1-hour</b> return.</li>
+    <li>MCPT <b>retrains a fresh tree on every permuted universe</b>, so the model's capacity to memorize is priced in.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Learns interactions and thresholds a linear rule cannot express</li>
+      <li>Feature importances make the learned logic inspectable</li>
+      <li>No distributional assumptions; handles skewed, fat-tailed inputs</li>
+      <li>Depth and leaf-size caps give a direct overfitting dial</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li><b>Enormous overfit capacity</b> — an unlimited-depth tree memorizes noise</li>
+      <li>24h labels sampled hourly <b>overlap</b>, inflating apparent skill</li>
+      <li>Label horizon (24h) ≠ scoring horizon (1h) — a structural mismatch</li>
+      <li>Very unstable: small data changes reshape the whole tree</li>
+      <li>Drift makes classes imbalanced; the tree can learn "always up"</li>
+    </ul></div>
+  </div>
+  <div class="ask">MCPT asks: can the tree find equally convincing structure in bars with no memory at all? Usually it can — which is exactly the lesson.</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">4 · Moving-Average Crossover</span><span class="tagline">TREND FILTER · LONG/FLAT (OPTIONAL SHORT)</span></div>
+  <ol>
+    <li>Compute a fast SMA (default 10) and a slow SMA (default 30) of close.</li>
+    <li>Fast above slow → <b>long (+1)</b>; otherwise <b>flat (0)</b>, or <b>short (−1)</b> if shorts are enabled.</li>
+    <li>No optimization is performed — the windows are fixed, so MCPT tests the <b>raw rule</b> rather than a selected winner.</li>
+    <li>Position changes only at crossovers, so turnover is low compared with the breakout rule.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Simplest trend filter; few degrees of freedom → little mining bias</li>
+      <li>Low turnover makes it far more robust to fees and slippage</li>
+      <li>Long/flat sidesteps shorting cost and borrow risk</li>
+      <li>Behaviour is easy to reason about and to explain to a risk committee</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li>Lags every turn — gives back the first leg of each reversal</li>
+      <li>Whipsaws in chop; flat periods earn nothing</li>
+      <li>Long/flat is implicitly a bet on positive drift, not pure timing skill</li>
+      <li>10/30 is still a choice; results are sensitive to that pair</li>
+    </ul></div>
+  </div>
+  <div class="ask">MCPT asks: does this fixed rule beat shuffled bars? With no optimizer in the loop, a significant p-value here is the cleanest evidence of a real trend pattern.</div>
+</div>
+""", unsafe_allow_html=True)
+
+    sec("G", "Reading the lab")
+    st.markdown(
+        """
+<div class="panel">
+<h3>Workflow</h3>
+<p><b style="color:var(--text)">1.</b> Upload Currency 1 (Currency 2 only if you want the correlation demo). <b style="color:var(--text)">2.</b> Choose a pipeline and its parameters.
+<b style="color:var(--text)">3.</b> Set permutations — 1000 is the target; 200 is a reasonable first pass for walk-forward. <b style="color:var(--text)">4.</b> Run and watch the histogram build.</p>
+<p><b style="color:var(--btc2)">Histogram</b> — the distribution of the <i>best</i> profit factor the pipeline achieves on noise. The amber line is your real result; the red tail is everything that beat it.
+<b style="color:var(--btc2)">Equity spaghetti</b> — your real curve against permuted strategies; if your curve sits inside the cyan bundle, it is indistinguishable from noise.
+<b style="color:var(--btc2)">Optimization surface</b> — the real PF curve against the noise mean ±1σ envelope; the vertical gap is the evidence, not the peak height.</p>
+<p><b style="color:var(--green)">p ≤ 0.05</b> edge detected · <b style="color:var(--btc2)">0.05 &lt; p ≤ 0.20</b> inconclusive · <b style="color:var(--red)">p &gt; 0.20</b> consistent with noise.
+A permutation p-value can never be smaller than 1/N — with 1000 permutations the floor is 0.001.</p>
+</div>
+<div class="callout"><b>Limitations to keep in view.</b> Every result is gross of fees, slippage and funding. Profit factor is scale-free but ignores drawdown and path risk.
+MCPT prices the selection procedure you actually ran — if you also tried other pipelines and only tested the winner, the honest N is larger than what the app reports.
+Seeds are fixed internally so runs are reproducible; the Turbo engine is a vectorized implementation of the same mathematics as the reference loops.</div>
 """, unsafe_allow_html=True)
 
     sec("C", "Complete source — every file, runnable")
@@ -1191,18 +1417,18 @@ and the optimizer re-trains inside every permutation — so the test prices in t
         st.code(src, language="python" if pick.endswith(".py") else "text", line_numbers=True)
         d1, d2 = st.columns(2)
         d1.download_button(f"⬇ {pick}", src, file_name=pick, key="dl_file")
-        d2.download_button("⬇ Full project (.zip)", project_zip(), file_name="permutlab.zip", mime="application/zip", key="dl_zip")
+        d2.download_button("⬇ Full project (.zip)", project_zip(),
+                           file_name="permutation_tests_trading_strategies.zip",
+                           mime="application/zip", key="dl_zip")
     else:
         st.warning(f"{pick} not found on disk.")
     st.markdown(
-        """
-<div class="callout"><b>Run it:</b> <code>pip install -r requirements.txt</code> → <code>streamlit run app.py</code>.
-Standalone research scripts (<code>insample_donchian_mcpt.py</code>, <code>walkforward_donchian_mcpt.py</code>, <code>insample_tree_mcpt.py</code>)
-run the classic tqdm + matplotlib workflow against <code>BTCUSD3600.pq</code>, falling back to the synthetic feed when the file is absent.</div>
-""", unsafe_allow_html=True)
+        '<div class="callout"><b>Run it:</b> <code>pip install -r requirements.txt</code> → <code>streamlit run app.py</code>. '
+        'The standalone scripts run the classic tqdm + matplotlib workflow against a local parquet file, falling back to the synthetic feed when it is absent.</div>',
+        unsafe_allow_html=True)
 
 st.markdown(
-    '<div class="foot">PERMUTLAB · MCPT IN THE TRADITION OF ARONSON\'S EVIDENCE-BASED TA &amp; MASTERS\' PERMUTATION TESTS · '
-    'DISTRIBUTION SURVIVES THE SHUFFLE — DEPENDENCE DOES NOT · BUILT WITH STREAMLIT + PLOTLY</div>',
+    f'<div class="foot">PERMUTATION TESTS · TRADING STRATEGIES · BUILT BY <b>{AUTHOR.upper()}</b> · '
+    'DISTRIBUTION SURVIVES THE SHUFFLE — DEPENDENCE DOES NOT</div>',
     unsafe_allow_html=True,
 )
