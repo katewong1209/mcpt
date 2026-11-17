@@ -339,34 +339,54 @@ def num_slider(label, lo, hi, default, key):
 
 
 def year_bounds(df):
-    """(first selectable year, upper bound). End-exclusive, and always reaches the
-    current calendar year so new data never needs a code change."""
+    """(first selectable year, last selectable year) — INCLUSIVE on both ends.
+    The last year is the later of the feed's final year and the current calendar
+    year, so the slider always stops on the current year and never needs editing."""
     now = int(pd.Timestamp.now(tz="UTC").year)
     if df is None or len(df) == 0:
-        return now - 1, now + 1
+        return now - 1, now
     ymin = int(df.index.year.min())
     last = int(df.index.year.max())
-    return ymin, int(max(max(last, now) + 1, ymin + 1))
+    return ymin, int(max(last, now, ymin))
 
 
 def year_defaults(df):
-    """(in-sample default, walk-forward default) derived from the loaded feed.
-    In-sample keeps the final data year as a hold-out; walk-forward uses everything."""
-    ymin, ymax = year_bounds(df)
-    last = int(df.index.year.max()) if df is not None and len(df) else ymax - 1
-    is_end = int(max(ymin + 1, min(last, ymax - 1)))
-    return (ymin, is_end), (ymin, int(max(last + 1, ymin + 1)))
+    """(in-sample default, walk-forward default) — both span first year → last
+    selectable year, i.e. through the current year."""
+    lo, hi = year_bounds(df)
+    return (lo, hi), (lo, hi)
 
 
 def clamp_years(v, lo, hi, fallback):
-    """Keep a stored year range inside the current bounds, always with start < end."""
+    """Keep a stored year range inside the current inclusive bounds (start <= end)."""
     try:
         a, b = int(v[0]), int(v[1])
     except Exception:
         return fallback
-    a = max(lo, min(a, hi - 1))
-    b = max(a + 1, min(b, hi))
+    a = max(lo, min(a, hi))
+    b = max(a, min(b, hi))
     return a, b
+
+
+def sanitize_years(key, lo, hi):
+    v = st.session_state.get(key)
+    if isinstance(v, (tuple, list)) and len(v) == 2:
+        a, b = int(v[0]), int(v[1])
+        if not (lo <= a <= b <= hi):
+            st.session_state.pop(key, None)
+    elif v is not None:
+        st.session_state.pop(key, None)
+
+
+def year_range(label, lo, hi, default, key):
+    """Inclusive year-range slider; degrades to a caption when one year exists."""
+    lo, hi = int(lo), int(hi)
+    if hi <= lo:
+        st.caption(f"{label}: {lo}")
+        return lo, lo
+    sanitize_years(key, lo, hi)
+    a, b = st.slider(label, lo, hi, (int(default[0]), int(default[1])), key=key)
+    return int(a), int(b)
 
 
 def fmt_n(x, spec="{:.3f}", dash="—"):
@@ -653,16 +673,6 @@ def logbin_spectrum(x, nbins=46):
     return np.asarray(fx), np.asarray(px)
 
 
-def sanitize_range(key, lo, hi):
-    v = st.session_state.get(key)
-    if isinstance(v, (tuple, list)) and len(v) == 2:
-        a, b = int(v[0]), int(v[1])
-        if not (lo <= a < b <= hi):
-            st.session_state.pop(key, None)
-    elif v is not None:
-        st.session_state.pop(key, None)
-
-
 # ---------------------------------------------------------------- data
 @st.cache_data(show_spinner="Synthesizing demo feed…")
 def synth_pair(seed=REF_SEED):
@@ -810,7 +820,7 @@ def start_run():
     cfg = collect_cfg()
     if cfg["strategy"] == "donchian_wf":
         y = btc.index.year
-        n_win = int(((y >= cfg["wf_start"]) & (y < cfg["wf_end"])).sum())
+        n_win = int(((y >= cfg["wf_start"]) & (y <= cfg["wf_end"])).sum())
         try:
             wf_plan(n_win, cfg["wf_train_bars"], cfg["wf_step_bars"])
         except ValueError as ex:
@@ -893,9 +903,9 @@ def compute_details(btc, cfg):
         spans = tuple(cfg.get("tree_spans", d["spans"]))
         horizon = int(cfg.get("tree_horizon", d["horizon"]))
         if strat in ("donchian_is", "tree"):
-            win = btc[(btc.index.year >= cfg["is_start"]) & (btc.index.year < cfg["is_end"])]
+            win = btc[(btc.index.year >= cfg["is_start"]) & (btc.index.year <= cfg["is_end"])]
         elif strat == "donchian_wf":
-            win = btc[(btc.index.year >= cfg["wf_start"]) & (btc.index.year < cfg["wf_end"])]
+            win = btc[(btc.index.year >= cfg["wf_start"]) & (btc.index.year <= cfg["wf_end"])]
         else:
             win = btc
         if len(win) < 4:
@@ -1411,13 +1421,13 @@ with st.sidebar:
     dflt = tf_defaults(tf)
     unit = TF_UNIT[tf]
     n_bars = len(btc_df)
-    ymin, ymax = year_bounds(btc_df)          # detects the latest data year and the current year
+    ymin, ymax = year_bounds(btc_df)          # inclusive; stops on the current year
     is_def, wf_def = year_defaults(btc_df)
     data_last = int(btc_df.index.year.max())
     st.caption(f"{src_label} · {n_bars:,} {unit} bars · data {ymin}–{data_last}" +
                (" · currency 2 loaded" if eth_df is not None else ""))
-    if ymax - 1 > data_last:
-        st.caption(f"Year sliders run to {ymax - 1} (current year); this feed ends in {data_last}.")
+    if ymax > data_last:
+        st.caption(f"Year sliders run to {ymax} (current year); this feed ends in {data_last}.")
     if n_bars < 30:
         st.caption(f"⚠ {n_bars} {unit} bars — the test still runs, but such a small sample is indicative only.")
 
@@ -1436,14 +1446,11 @@ with st.sidebar:
         lb_min, lb_max, lb_step = dflt["lb_min"], dflt["lb_max"], dflt["lb_step"]
 
     if strategy in ("donchian_is", "tree"):
-        sanitize_range("w_is_years", ymin, ymax)
-        st.slider("In-sample years (end exclusive)", ymin, ymax, is_def, key="w_is_years")
+        year_range("In-sample years (inclusive)", ymin, ymax, is_def, "w_is_years")
 
     if strategy == "donchian_wf":
-        sanitize_range("w_wf_years", ymin, ymax)
-        st.slider("Walk-forward years (end exclusive)", ymin, ymax, wf_def, key="w_wf_years")
-        y0, y1 = st.session_state["w_wf_years"]
-        n_win = int(((btc_df.index.year >= y0) & (btc_df.index.year < y1)).sum())
+        y0, y1 = year_range("Walk-forward years (inclusive)", ymin, ymax, wf_def, "w_wf_years")
+        n_win = int(((btc_df.index.year >= y0) & (btc_df.index.year <= y1)).sum())
         tr = num_slider(f"Training window ({unit} bars)", 2, wf_train_max(n_win), dflt["train"], "w_wf_train")
         stp = num_slider(f"Re-optimize every ({unit} bars)", 1, wf_step_max(n_win), dflt["step"], "w_wf_step")
         if n_win < 4:
@@ -1795,9 +1802,9 @@ The question is whether your pipeline's result is distinguishable from what the 
 (open = first, high = max, low = min, close = last). Lookbacks, the walk-forward training window and step, the MA pair, the tree's
 momentum spans and label horizon, and the ACF lags are all counted in <b>bars of that size</b> and auto-fit the sample — there is no
 minimum bar count. Permutation is applied to those same bars, so the null always matches what the strategy trades.</div>
-<div class="callout cool"><b>Year ranges are automatic.</b> The date sliders start at the first year in your data and end one past
-the later of (your last data year, the current calendar year), so the current year is always selectable and nothing is hard-coded.
-Defaults follow the data: in-sample keeps the final data year as a hold-out, walk-forward uses the full range.</div>
+<div class="callout cool"><b>Year ranges are automatic and inclusive.</b> The date sliders start at the first year in your data and
+stop on the current calendar year — both ends are included, so selecting 2016 → 2026 keeps every bar in 2026. Nothing is hard-coded:
+load a newer file and the range extends itself. Both pipelines default to the full range.</div>
 <div class="pd-grid">
   <div class="pd keep"><h4>✓ PRESERVED by bar permutation</h4><ul>
     <li><b>Marginal distribution</b> of returns — mean, std, skew, kurtosis</li>
@@ -2050,7 +2057,7 @@ MCPT prices the procedure you actually ran; if you tried several pipelines and o
                 "Coarse bar size, or a long MA/lookback on a short sample",
                 "Feature spans plus label horizon exceed the rows available",
                 "Date range or bar size leaves almost nothing to trade",
-                "Year range extends past the end of the loaded data",
+                "Selected years sit beyond the end of the loaded data",
                 "Missing / misnamed OHLC columns, or a non-datetime first column",
                 "Fewer than 8 usable rows after cleaning",
                 "File larger than the upload cap",
@@ -2061,7 +2068,7 @@ MCPT prices the procedure you actually ran; if you tried several pipelines and o
                 "Pick a finer bar size, widen the range, lower the grid, or allow shorts",
                 "Use daily or hourly bars, or widen the date range",
                 "Widen the years; the sidebar shows the auto-fitted train / step / OOS counts",
-                "The sidebar shows the data's last year — drag the end back to it, or load newer data",
+                "The sidebar states the feed's last year — drag the end back to it, or load newer data",
                 "Match the schema in section D; extra columns are fine, names are lower-cased",
                 "Check for non-positive prices, NaNs and duplicate timestamps",
                 "Resample to daily before upload, or split by year (max 200 MB per file)",
@@ -2094,9 +2101,9 @@ A different horizon or a cost-aware variant may behave differently.</p>
 <h4>Why 1000 permutations?</h4>
 <p>Resolution. The smallest attainable p-value is 1/(N+1): 0.02 at 50, 0.005 at 200, ≈0.001 at 1000. Monte Carlo error
 on p shrinks roughly with 1/√N, so 1000 is the point where a 0.05 verdict becomes stable.</p>
-<h4>Why do the year sliders go past my data?</h4>
-<p>They always reach the current calendar year so new files never need a code change. The sidebar states the last year
-your feed actually contains; ranges beyond it simply select fewer bars.</p>
+<h4>What do the year sliders include?</h4>
+<p>Both ends. They run from the first year in your data to the current calendar year, and the default selection covers
+that whole span. Years past the end of your feed simply contain no bars — the sidebar states the feed's last year.</p>
 <h4>Why is walk-forward so much slower?</h4>
 <p>It re-runs the full lookback sweep at every step, inside every permutation. Cost scales with
 steps × grid size × permutations. Turbo, a coarser grid step, or daily bars are the three effective levers.</p>
