@@ -2116,8 +2116,11 @@ convert and rename, then keep the four price columns.</p>
     sec("E", "Execution — what a permutation test does not price")
     st.markdown(
         """
-<div class="callout"><b>What the test does not price.</b> A permutation test prices <b>data-mining bias</b>: how often noise beats your pipeline. It does not tell you whether the edge survives <b>execution</b>. Every figure here is gross, close-to-close, and assumes a fill at the signal bar's close. The blocks below name what stands between that and a real fill; the table after them shows how each one bears on the p-value.</div>
+<div class="callout"><b>What the test does not price.</b> A permutation test prices <b>data-mining bias</b>: how often noise beats your pipeline. It does not tell you whether the edge survives <b>execution</b>. Every figure here is gross, close-to-close, and assumes a fill at the signal bar's close. The blocks below name what stands between that and a real fill; the table after them shows how each one bears on the p-value.</div>""", unsafe_allow_html=True)
 
+    sec("X", "Market structure — order book, auctions, sessions, liquidity events")
+    st.markdown(
+        """
 <div class="strat-block">
   <div class="hd"><span class="nm">1 · Transaction cost analysis (TCA)</span><span class="tagline">PRE-TRADE · INTRA-TRADE · POST-TRADE</span></div>
   <ol>
@@ -2175,11 +2178,7 @@ convert and rename, then keep the four price columns.</p>
   </ol>
   <div class="ask">ADV is a trailing average. On a liquidity event it overstates what the market can absorb that day.</div>
 </div>
-""", unsafe_allow_html=True)
 
-    sec("X", "Market structure — order book, auctions, sessions, liquidity events")
-    st.markdown(
-        """
 <div class="strat-block">
   <div class="hd"><span class="nm">5 · Order book</span><span class="tagline">BID · ASK · DEPTH · QUEUE</span></div>
   <ol>
