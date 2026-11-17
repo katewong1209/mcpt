@@ -18,9 +18,7 @@ def train_tree(ohlc: pd.DataFrame, min_samples_leaf=5, max_depth=None, random_st
     model = DecisionTreeClassifier(
         min_samples_leaf=min_samples_leaf, max_depth=max_depth, random_state=random_state
     )
-    model.fit(
-        dataset[FEATURES].to_numpy(), dataset["target"].astype(int).to_numpy()
-    )
+    model.fit(dataset[FEATURES].to_numpy(), dataset["target"].astype(int).to_numpy())
     return model
 
 
