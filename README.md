@@ -17,8 +17,6 @@ uploaded the app runs on a seeded synthetic BTC/ETH hourly feed (GARCH volatilit
 clustering, trend regimes, fat tails) so every workflow works end to end. A local
 `BTCUSD3600.pq` is offered automatically when present.
 
-Seeds are fixed internally for reproducibility and are not user-editable.
-
 ## Method
 - Permute bars: intrabar geometry (H/L/C relative to open) shuffled jointly,
   close-to-open gaps shuffled separately. Marginal distribution preserved;
