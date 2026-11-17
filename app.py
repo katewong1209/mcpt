@@ -1342,4 +1342,260 @@ with tab_strat:
         show_fig(price_fig(det, style, show_ov), key="s_price")
         show_fig(position_fig(det["eq_x"], det["pos_ds"]), key="s_pos")
 
-        ce, cd = st.columns([1
+        ce, cd = st.columns([1.5, 1])
+        with ce:
+            show_fig(equity_fig(det["eq_x"], det["eq"], [], "Equity"), key="s_eq")
+        with cd:
+            show_fig(dd_fig(det["eq_x"], det["dd"]), key="s_dd")
+
+        ex = det["extra"]
+        if "opt" in ex:
+            lbs, curve, bL = ex["opt"]
+            show_fig(optcurve_fig(lbs, curve, bL), key="s_opt")
+            st.caption(f"Best lookback on real bars: {bL}. The Permutation Lab renders the verdict.")
+        if "wf_choices" in ex:
+            show_fig(choices_fig(ex["wf_choices"]), key="s_wf")
+        if "importances" in ex:
+            show_fig(imp_fig(ex["importances"], ex.get("spans", cfg_now["tree_spans"]), unit_now), key="s_imp")
+
+# ---------------------------------------------------------------- ANATOMY
+with tab_anat:
+    sec("A", "What permutation preserves — and what it kills")
+    ca, cb = st.columns([1, 3])
+    cb.button("🔀 Draw a new permutation", on_click=new_permutation_draw)
+    nlags = num_slider(f"ACF lags ({unit_now} bars)", 2, max(3, min(336, len(btc_df) // 3)),
+                       tf_defaults(tf_now)["lags"], "w_lags")
+    an = anatomy(btc_df, eth_df, int(st.session_state.get("anat_draw", 0)), nlags, tf_now)
+    st.caption(f"{an['bars']:,} {unit_now} bars · {an['span']} · fixed seeds.")
+
+    col1, col2 = st.columns([1.5, 1])
+    with col1:
+        show_fig(rebased_fig(an["x"], an["lcr"], an["lcp"]), key="an_price")
+        st.caption("Same bars, same total return — different path.")
+    with col2:
+        st.markdown('<div class="panel"><h3>Distribution preserved</h3>'
+                    '<p>Shuffling rearranges bars; it cannot change the histogram of returns.</p></div>',
+                    unsafe_allow_html=True)
+        st.table(an["moments"].style.format("{:.6f}"))
+
+    c1, c2 = st.columns(2)
+    with c1:
+        show_fig(acf_fig(an["lags"], an["ar"], an["ap"], an["n"], "ACF · returns", unit_now), key="an_acf_r")
+    with c2:
+        show_fig(acf_fig(an["lags"], an["aar"], an["aap"], an["n"], "ACF · |returns|", unit_now), key="an_acf_a")
+    st.caption("Dashed = ±1.96/√n white-noise bounds.")
+
+    if len(an["fxr"]) > 2:
+        show_fig(spec_fig(an["fxr"], an["pxr"], an["fxp"], an["pxp"]), key="an_spec")
+        st.caption("Slow low-frequency decay = long memory; permutation flattens it.")
+
+    if an["corr"]:
+        cr = an["corr"]
+        show_fig(corr_fig(cr["rb"], cr["re"], cr["pb"], cr["pe"], cr["rho_r"], cr["rho_p"]), key="an_corr")
+        st.caption("One shared shuffle keeps contemporaneous correlation alive.")
+    else:
+        st.info("Load Currency 2 to see the joint-permutation correlation demo.")
+
+# ---------------------------------------------------------------- METHOD & GUIDE
+with tab_method:
+    sec("M", "The logic of the test")
+    st.markdown(
+        """
+<div class="panel">
+<h3>Why permutation testing?</h3>
+<p>Using the best version of a strategy <b style="color:var(--text)">requires optimization</b> — and optimization
+<b style="color:var(--btc2)">always induces data-mining bias</b>: pick the best of 157 lookbacks and the winner's profit factor is inflated by selection alone.
+The question is whether your pipeline's result is distinguishable from what the <i>same pipeline</i> achieves on data with no pattern at all.</p>
+<p>MCPT builds that null by shuffling bars, then re-runs the <b style="color:var(--cyan)">entire procedure — optimization included —</b> on every permuted universe.
+<b style="color:var(--cyan)">Aim for 1000 permutations.</b></p>
+</div>
+""", unsafe_allow_html=True)
+    st.latex(r"p \;=\; \frac{1 \;+\; \#\{\,PF^{\,perm} \;\ge\; PF^{\,real}\,\}}{N_{perm} \;+\; 1}")
+    st.caption("The real run counts as one observation (hence the +1). Undefined permutation PFs count as 'no edge', never as a free pass.")
+
+    st.markdown(
+        """
+<div class="callout"><b>Bar size drives everything.</b> The feed is aggregated once into hourly, daily, monthly or yearly OHLC
+(open = first, high = max, low = min, close = last). Lookbacks, the walk-forward training window and step, the MA pair, the tree's
+momentum spans and label horizon, and the ACF lags are all counted in <b>bars of that size</b> and auto-fit the sample — there is no
+minimum bar count. Permutation is applied to those same bars, so the null always matches what the strategy trades.</div>
+<div class="pd-grid">
+  <div class="pd keep"><h4>✓ PRESERVED by bar permutation</h4><ul>
+    <li><b>Marginal distribution</b> of returns — mean, std, skew, kurtosis</li>
+    <li><b>Intrabar geometry</b> — high/low/close relative to open, shuffled jointly</li>
+    <li><b>Gap distribution</b> — close-to-open jumps, shuffled separately</li>
+    <li><b>Cross-market correlation</b> — when currencies are permuted jointly</li>
+    <li><b>Real history before start_index</b> — walk-forward permutes only the OOS region</li>
+  </ul></div>
+  <div class="pd kill"><h4>✕ DESTROYED by bar permutation</h4><ul>
+    <li><b>Volatility clustering</b> — serial correlation of absolute returns</li>
+    <li><b>Long memory</b> — slow decay of dependency over longer lags</li>
+    <li><b>Self-similarity</b> and fractal scaling across horizons</li>
+    <li><b>Frequency-domain structure</b> — the spectrum of |returns| flattens</li>
+    <li><b>Anything involving dependence</b> — trends, mean-reversion, calendar effects</li>
+  </ul></div>
+</div>
+""", unsafe_allow_html=True)
+
+    sec("P", "Every pipeline — how it works, strengths, weaknesses")
+    st.markdown(
+        """
+<div class="strat-block">
+  <div class="hd"><span class="nm">1 · Donchian Breakout — In-Sample (optimized)</span><span class="tagline">TREND / BREAKOUT · 1 PARAMETER SWEPT</span></div>
+  <ol>
+    <li>Channel from the <b>prior L−1 closes</b>: upper = rolling max, lower = rolling min, both <b>shifted one bar</b> — causal.</li>
+    <li>Close above upper → <b>+1</b>; below lower → <b>−1</b>; otherwise hold until the opposite break.</li>
+    <li>Earn the next bar's log return: <code>signal × (log close[t+1] − log close[t])</code>.</li>
+    <li>Sweep the lookback grid and keep the <b>highest profit factor</b> on that same data. That selection step is the bias MCPT prices.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Captures fat-tailed trending regimes</li>
+      <li>One transparent parameter</li>
+      <li>Always in the market — cannot miss a violent breakout</li>
+      <li>No look-ahead in the signal</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li><b>Maximum selection bias</b> — the best of the grid is an upper bound</li>
+      <li>Spiky PF surface; the winner is often unstable</li>
+      <li>Whipsaws in ranges; no stop or sizing</li>
+      <li>Gross of fees, slippage and funding</li>
+    </ul></div>
+  </div>
+  <div class="ask">MCPT asks: does the <i>whole sweep</i> find lookbacks this good on shuffled bars?</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">2 · Donchian Breakout — Walk-Forward</span><span class="tagline">SAME RULE · RE-OPTIMIZED OUT OF SAMPLE</span></div>
+  <ol>
+    <li>Reserve a training window measured in <b>bars of the selected timeframe</b>, auto-fitted to the sample.</li>
+    <li>At each step, sweep <b>only the trailing training window</b>, then trade the next step's unseen bars.</li>
+    <li>Roll forward and stitch the segments. <b>Only out-of-sample bars are scored, counted and plotted.</b></li>
+    <li>Permutation starts at <code>start_index = train_bars</code>; the <b>re-optimization runs inside every permutation</b>.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Honest out-of-sample estimate</li>
+      <li>Adapts as regimes change</li>
+      <li>Tests the <b>procedure</b> you would deploy</li>
+      <li>Selection bias reduced and still measured</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li>Bias reduced, not removed</li>
+      <li>Parameter churn adds turnover</li>
+      <li>One full sweep per step, per permutation</li>
+      <li>Shorter traded sample → wider uncertainty</li>
+    </ul></div>
+  </div>
+  <div class="ask">The strongest of the four tests: does the adaptive procedure beat noise re-optimized the same way?</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">3 · Decision Tree Classifier</span><span class="tagline">NON-LINEAR MOMENTUM · SUPERVISED</span></div>
+  <ol>
+    <li>Three momentum features whose spans <b>scale with the bar size</b> (hourly 6/24/168, daily 1/5/21, monthly 1/3/12, yearly 1/2/3).</li>
+    <li>Label: sign of the next <b>horizon</b> bars, mapped to {0, 1}; incomplete rows dropped.</li>
+    <li><code>DecisionTreeClassifier</code> with your leaf/depth caps; leaf size is clamped to the usable rows.</li>
+    <li>Predict 1 → long, 0 → short; warm-up bars stay <b>flat (NaN)</b>, never an accidental short.</li>
+    <li>MCPT <b>retrains a fresh tree on every permuted universe</b>.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Learns non-linear interactions</li>
+      <li>Inspectable feature importances</li>
+      <li>No distributional assumptions</li>
+      <li>Depth/leaf caps are a direct overfitting dial</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li><b>Enormous overfit capacity</b></li>
+      <li>Overlapping labels inflate apparent skill</li>
+      <li>Label horizon ≠ scoring horizon (1 bar)</li>
+      <li>Very unstable; drift imbalances classes</li>
+    </ul></div>
+  </div>
+  <div class="ask">Can the tree find equally convincing structure in bars with no memory at all?</div>
+</div>
+
+<div class="strat-block">
+  <div class="hd"><span class="nm">4 · Moving-Average Crossover</span><span class="tagline">TREND FILTER · LONG/FLAT (OPTIONAL SHORT)</span></div>
+  <ol>
+    <li>Fast and slow SMA of close, defaults scaled to the bar size.</li>
+    <li>Fast above slow → <b>long</b>; otherwise <b>flat</b>, or <b>short</b> if enabled.</li>
+    <li>No optimization — MCPT tests the <b>raw rule</b>. Fast ≥ slow is auto-corrected to slow − 1.</li>
+    <li>Turns only at crossovers, so turnover is low.</li>
+  </ol>
+  <div class="pd-grid">
+    <div class="pd keep"><h4>Strengths</h4><ul>
+      <li>Few degrees of freedom → little mining bias</li>
+      <li>Low turnover, robust to costs</li>
+      <li>Long/flat sidesteps borrow risk</li>
+      <li>Easy to explain</li>
+    </ul></div>
+    <div class="pd kill"><h4>Weaknesses</h4><ul>
+      <li>Lags every turn</li>
+      <li>Whipsaws in chop; flat periods earn nothing</li>
+      <li>Long/flat is partly a bet on positive drift</li>
+      <li>Still sensitive to the chosen pair</li>
+    </ul></div>
+  </div>
+  <div class="ask">With no optimizer in the loop, significance here is the cleanest evidence of a real trend pattern.</div>
+</div>
+""", unsafe_allow_html=True)
+
+    sec("G", "Reading the lab")
+    st.markdown(
+        """
+<div class="panel">
+<h3>Workflow</h3>
+<p><b style="color:var(--text)">1.</b> Load Currency 1. <b style="color:var(--text)">2.</b> Pick a bar size.
+<b style="color:var(--text)">3.</b> Pick a pipeline; windows auto-fit. <b style="color:var(--text)">4.</b> Set permutations and run.</p>
+<p><b style="color:var(--btc2)">PF histogram</b> — the amber line is your real result, the red tail everything that beat it.
+<b style="color:var(--btc2)">Equity</b> — thick amber real curve on top of the cyan noise bundle, its median and 10–90% band; inside the band means indistinguishable from noise.
+<b style="color:var(--btc2)">PF vs lookback</b> — the vertical gap above the noise envelope is the evidence.</p>
+<p><b style="color:var(--green)">p ≤ 0.05</b> edge · <b style="color:var(--btc2)">0.05 &lt; p ≤ 0.20</b> inconclusive · <b style="color:var(--red)">p &gt; 0.20</b> noise.
+The floor is 1/(N+1) — ≈0.001 at 1000 permutations.</p>
+</div>
+<div class="callout"><b>Limitations.</b> Gross of fees, slippage and funding. Profit factor ignores drawdown and path risk.
+Very coarse bar sizes produce very few bars — the test still runs, but treat such results as indicative.
+MCPT prices the procedure you actually ran; if you tried several pipelines and only tested the winner, the honest N is larger.</div>
+""", unsafe_allow_html=True)
+
+    sec("C", "Complete source — every file, runnable")
+    FILES = [
+        "app.py", "mcpt_engine.py", "donchian.py", "bar_permute.py", "tree_strat.py",
+        "moving_average.py", "market_data.py", "insample_donchian_mcpt.py",
+        "walkforward_donchian_mcpt.py", "insample_tree_mcpt.py", "requirements.txt", "README.md",
+    ]
+
+    @st.cache_data(show_spinner=False)
+    def project_zip():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in FILES:
+                p = Path(f)
+                if p.exists():
+                    z.write(p, f)
+        return buf.getvalue()
+
+    pick = st.selectbox("Source file", FILES, key="w_file")
+    p = Path(pick)
+    if p.exists():
+        src = p.read_text(encoding="utf-8")
+        st.code(src, language="python" if pick.endswith(".py") else "text", line_numbers=True)
+        d1, d2 = st.columns(2)
+        d1.download_button(f"⬇ {pick}", src, file_name=pick, key="dl_file")
+        d2.download_button("⬇ Full project (.zip)", project_zip(),
+                           file_name="permutation_tests_trading_strategies.zip",
+                           mime="application/zip", key="dl_zip")
+    else:
+        st.warning(f"{pick} not found on disk.")
+    st.markdown(
+        '<div class="callout"><b>Run it:</b> <code>pip install -r requirements.txt</code> → <code>streamlit run app.py</code>. '
+        'The standalone scripts remain the classic hourly tqdm + matplotlib workflow.</div>',
+        unsafe_allow_html=True)
+
+st.markdown(
+    f'<div class="foot">PERMUTATION TESTS · TRADING STRATEGIES · BUILT BY <b>{AUTHOR.upper()}</b> · '
+    'DISTRIBUTION SURVIVES THE SHUFFLE — DEPENDENCE DOES NOT</div>',
+    unsafe_allow_html=True,
+)
