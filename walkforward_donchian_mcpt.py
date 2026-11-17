@@ -31,7 +31,7 @@ permuted_pfs = []
 
 print("Walkforward MCPT")
 for perm_i in tqdm(range(1, n_permutations)):
-    wf_perm = get_permutation(df, start_index=train_window)
+    wf_perm = get_permutation(df, start_index=train_window, seed=69 + perm_i)
     wf_perm["r"] = np.log(wf_perm["close"]).diff().shift(-1)
     wf_perm_sig = walkforward_donch(wf_perm, train_lookback=train_window)
     perm_rets = wf_perm["r"] * wf_perm_sig
