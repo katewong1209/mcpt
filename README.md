@@ -2,8 +2,7 @@
 Built by Kate Wong.
 
 Optimization always induces data-mining bias. A good strategy exploits a real,
-repeatable market pattern. MCPT asks: does the fully-optimized pipeline perform
-this well on structureless noise too? If yes, it is overfitting.
+repeatable market pattern. 
 
 ## Quickstart
     pip install -r requirements.txt
