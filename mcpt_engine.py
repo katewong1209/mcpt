@@ -53,6 +53,7 @@ def _downsample(n):
 def _equity(rets):
     return np.nancumsum(np.asarray(rets, dtype=float))
 
+
 # ---- walk-forward geometry (single source of truth for engine + UI) ----
 BARS_PER_YEAR = 24 * 365          # hourly bars in a non-leap year
 MIN_OOS_STEPS = 2                 # at least two re-optimizations, otherwise the test is meaningless
@@ -88,7 +89,8 @@ def wf_plan(n_bars, train_years, step_days=30):
     years = int(min(max(int(train_years), 1), max_years))
     tw = min(years * BARS_PER_YEAR, n_bars - MIN_OOS_STEPS * tstep - 2)
     return int(tw), int(tstep), int(n_bars - tw)
-    
+
+
 def run_mcpt(job, btc, cfg):
     try:
         strat = cfg["strategy"]
@@ -136,7 +138,7 @@ def run_mcpt(job, btc, cfg):
                 real_rets = (sig_s * pd.Series(r, index=train.index)).to_numpy()
             work_df = train
 
-            elif strat == "donchian_wf":
+        elif strat == "donchian_wf":
             work_df = _years(btc, cfg["wf_start"], cfg["wf_end"])
             tw, tstep, n_oos = wf_plan(len(work_df), cfg["wf_train_years"], cfg["wf_step_days"])
             job["wf_train"] = tw
@@ -164,6 +166,7 @@ def run_mcpt(job, btc, cfg):
             oos_x = work_df.index[tw:]
             step = _downsample(len(oos_x))
             job["curve_x"] = oos_x[::step]
+
         else:  # ma
             work_df = btc
             job["window_desc"] = f"full feed · {len(work_df):,} bars"
@@ -193,9 +196,10 @@ def run_mcpt(job, btc, cfg):
                     psig = walkforward_donch_fast(pc, tw, tstep, *lb)
                 else:
                     psig = walkforward_donch(perm, tw, tstep, *lb)
-                ppf = profit_factor_np(psig * _rets(pc))
+                pr = (psig * _rets(pc))[tw:]          # OOS only — same slice as the real run
+                ppf = profit_factor_np(pr)
                 if i < MAX_SAMPLE_CURVES:
-                    job["sample_curves"].append(_equity(psig * _rets(pc))[::step])
+                    job["sample_curves"].append(_equity(pr)[::step])
 
             elif strat == "donchian_is":
                 perm = get_permutation(work_df, seed=seed)
