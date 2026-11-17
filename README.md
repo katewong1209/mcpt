@@ -3,7 +3,7 @@ Built by Kate Wong.
 
 A rigorous statistical framework to detect data-mining bias and overfitting in algorithmic trading strategies. By destroying serial dependence while preserving marginal distributions and intrabar geometry, MCPT establishes a robust null hypothesis to evaluate whether a strategy's edge is genuine or a product of chance.
 ## 📐 Methodology & Mathematical Formulation Standard 
-backtests suffer from path-dependency bias. MCPT addresses this by generating synthetic price paths that preserve the "shape" of the market but destroy its memory.
+Backtests suffer from path-dependency bias. MCPT addresses this by generating synthetic price paths that preserve the "shape" of the market but destroy its memory.
 
 ## Quickstart
     pip install -r requirements.txt
