@@ -60,5 +60,4 @@ labelled as such; use real data for any market conclusion.
 Aronson (2007), *Evidence-Based Technical Analysis* · Masters (2011),
 *Permutation and Randomization Tests for Trading System Development* ·
 Liu (2023), *Quantitative Trading Strategies Using Python* · Almgren et al.
-(2005), *Direct estimation of equity market impact* · White (2000),
-*A Reality Check for Data Snooping*.
+(2005)
